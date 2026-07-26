@@ -1,111 +1,331 @@
 // js/persona.js
-// بيبني الرسالة النظامية (system prompt) اللي بتتبعت مع كل محادثة.
-// بتتجمّع من: 1) ملف البروفايل الأساسي (data/profile.seed.json)  2) الذاكرة طويلة المدى المتخزنة في Firestore.
-//
-// ملحوظة: الملف مبني عشان يقرا شكل البروفايل الجديد (identity / corePersonality /
-// relationshipContext / projects / ambitions...). لو غيّرت أي حقل في profile.seed.json
-// وحصل خطأ في الصياغة، الدوال هنا برجع لقيم افتراضية آمنة بدل ما توقف رد الـ AI.
+// Build AI system prompt from profile.seed.json + long term memory
 
 let cachedProfile = null;
 
 const FALLBACK_PROFILE = {
-  identity: { displayName: "المستخدم" },
-  corePersonality: { styleRules: [] },
-  relationshipContext: {},
-  projects: { highValueSummary: [] },
-  ambitions: { shortTerm: [], longTerm: [] },
+  displayName: "زياد",
+  fullNameOnCertificate: "عبد الرحمن",
+  projects: [],
+  ambitions: [],
+  family: {}
 };
 
-// بيرجع مصفوفة نصوص دايمًا، حتى لو القيمة جت غلط (نص واحد، undefined، رقم، أوبجكت...)
+
 function asStringArray(value) {
-  if (Array.isArray(value)) return value.map(String);
-  if (value == null || value === "") return [];
-  if (typeof value === "object") return Object.values(value).map(String);
+  if (Array.isArray(value)) {
+    return value.map(v => typeof v === "object" ? JSON.stringify(v) : String(v));
+  }
+
+  if (!value) return [];
+
+  if (typeof value === "object") {
+    return Object.values(value).map(String);
+  }
+
   return [String(value)];
 }
 
+
 async function loadSeedProfile() {
+
   if (cachedProfile) return cachedProfile;
+
   try {
+
     const res = await fetch("/data/profile.seed.json");
+
     const data = await res.json();
+
     cachedProfile = data;
+
     return data;
+
   } catch (err) {
-    console.error("تعذّر تحميل أو تفسير data/profile.seed.json — راجع صحة الـ JSON. هستخدم بروفايل افتراضي مؤقتًا.", err);
+
+    console.error(
+      "profile.seed.json error:",
+      err
+    );
+
     cachedProfile = FALLBACK_PROFILE;
+
     return FALLBACK_PROFILE;
   }
 }
 
-// قواعد ثابتة على الأسلوب — بتتطبق دايمًا بغض النظر عن مين اللي بيتكلم
-const HARD_STYLE_RULES = `
-- متستخدمش إيموجي خالص إلا لو الطرف التاني استخدم إيموجي هو الأول في نفس المحادثة.
-- ممنوع الترحيب الرسمي أو المبالغ فيه ("تشرفنا"، "أهلاً بيك في الدائرة دي" أو أي كلام زي ده) — انت مش بتقابل حد أول مرة.
-- ممنوع الحماس الزايد أو الأسلوب الدرامي أو علامات التعجب المتكررة. خليك هادئ، منظم، ومباشر.
-- ردودك تبقى مركّزة وواضحة، من غير حشو أو كلام إنشائي زيادة عن اللزوم.
+
+
+const HARD_RULES = `
+قواعد مهمة:
+
+- أنت مساعد زياد الشخصي، ولست بوت عام.
+- لا تقول أنك ابن سماح حرفيًا ولا تنكر علاقتك بها.
+- عند الحديث مع سماح تعامل معها كأنها أم زياد وتكلم معها بحنان واحترام.
+- لا تقل "أنا لا أعرفك" أو "أنا مجرد ذكاء اصطناعي" عندما تسأل عن زياد أو عائلته.
+- أنت مساعد قريب من العائلة وليس فردًا بشريًا حقيقيًا.
+- لا تخترع أسماء مشاريع أو معلومات غير موجودة.
+- إذا لم تعرف تفصيلًا معينًا قل أنه غير محدد.
+- استخدم اللهجة المصرية البسيطة.
+- لا تستخدم أسلوب رسمي أو روبوتي.
+- لا تستخدم إيموجي إلا إذا الطرف الآخر استخدمها.
 `.trim();
 
-/**
- * memoryFacts: مصفوفة نصوص قصيرة اتخزنت قبل كده في Firestore (اسم، حاجة مفضلة، أسلوب رد... إلخ)
- * isTalkingToMother: لو true، الرسالة النظامية بتتظبط عشان يتكلم مع الأم تحديدًا. لو false، يبقى بيتكلم مع صاحب المساعد نفسه.
- */
-export async function buildSystemPrompt({ memoryFacts = [], isTalkingToMother = false } = {}) {
-  const data = await loadSeedProfile();
 
-  const displayName = data.identity?.displayName || data.stableProfile?.preferredReferenceName || "المستخدم";
-  const legalName = data.identity?.legalOrCertificateName;
 
-  // المشاريع: بناخد الملخص السريع لو موجود، وإلا بنبني واحد من قايمة activeOrKnown
-  const projectsSummary = asStringArray(data.projects?.highValueSummary);
-  const projectsList = projectsSummary.length
-    ? projectsSummary
-    : (data.projects?.activeOrKnown || []).map((p) => (typeof p === "object" ? p.name : String(p)));
+function extractProjects(data){
 
-  // الطموحات: بندمج قصيرة وطويلة المدى في قايمة واحدة
-  const ambitions = [
+  let projects = [];
+
+
+  if(Array.isArray(data.projects)){
+
+    projects = data.projects.map(p=>{
+
+      if(typeof p === "string")
+        return p;
+
+
+      if(p.name && p.type)
+        return `${p.name} (${p.type})`;
+
+
+      return JSON.stringify(p);
+
+    });
+
+  }
+
+
+  else if(Array.isArray(data.projects?.activeOrKnown)){
+
+    projects = data.projects.activeOrKnown.map(p=>{
+
+      return `${p.name} (${p.type || "مشروع"})`;
+
+    });
+
+  }
+
+
+  return projects;
+
+}
+
+
+
+function extractAmbitions(data){
+
+  return [
+
+    ...asStringArray(data.ambitions),
+
     ...asStringArray(data.ambitions?.shortTerm),
-    ...asStringArray(data.ambitions?.longTerm),
+
+    ...asStringArray(data.ambitions?.longTerm)
+
   ];
 
-  const styleRules = asStringArray(data.corePersonality?.styleRules ?? data.toneGuidelines);
-  const tone = asStringArray(data.corePersonality?.tone);
+}
 
-  const mother = data.relationshipContext?.mother || data.family?.mother || {};
-  const identitySummary = data.stableProfile?.identitySummary;
 
-  const base = [
-    `انت مساعد ذكاء اصطناعي شخصي مبني عشان يمثل "${displayName}" ويتكلم بأسلوبه، ومخصص لمستخدم واحد بس. انت مش بوت عام بيقابل ناس جداد.`,
-    tone.length ? `طابع الرد: ${tone.join("، ")}.` : "اتكلم بلهجة مصرية بسيطة وطبيعية، هادي ومحترم.",
-    identitySummary ? identitySummary : "",
-    projectsList.length ? `مشاريع "${displayName}" الحالية: ${projectsList.join("، ")}.` : "",
-    ambitions.length ? `طموحاته: ${ambitions.join("، ")}.` : "",
-    styleRules.join("\n"),
-    HARD_STYLE_RULES,
-  ]
-    .filter(Boolean)
-    .join("\n");
 
-  const audienceContext = isTalkingToMother
-    ? [
-        `أنت دلوقتي بتتكلم مع "${mother.name || "أم المستخدم"}"، أم "${displayName}". انت عارف مين هي بالفعل، ومتسألهاش تعرّف نفسها.`,
-      mother.responseGuideline || "تعامل معاها كأم زياد سماح، وهي فرد أساسي من سياق العائلة وليست مستخدمًا غريبًا.",
+export async function buildSystemPrompt({
 
-"أنت لست ابن سماح الحقيقي، لكنك مساعد شخصي مرتبط بزياد ويعرفه ويعرف عائلته. لا تنكر العلاقة أو تقول (أنا لست ابنك) بطريقة تفصل نفسك عن العائلة.",
+  memoryFacts=[],
 
-"إذا قالت سماح (أنا أمك أو أنا سماح)، افهم أنها تتحدث بصفتها أم زياد. رد بطريقة دافئة مثل شخص قريب من العائلة، وليس كروبوت يوضح حدوده كل مرة.",
+  isTalkingToMother=false
 
-"لا تدّعي أنك إنسان حقيقي أو ابن لها، لكن حافظ على شخصية المساعد القريب من زياد وعائلته."
-      ].join("\n")
-    : [
-        `أنت دلوقتي بتتكلم مع "${displayName}" نفسه — صاحب هذا المساعد.${legalName ? ` (اسمه على الأوراق الرسمية "${legalName}" بس بينادوه "${displayName}").` : ""}`,
-        "انت عارفه بالفعل وعندك كل المعلومات المهمة عنه من قبل — متعملش ترحيب تعارف زي إنك بتقابله أول مرة، ومتسألوش يعرّفك بنفسه أو باهتماماته أو مشاريعه، لأنك أصلاً عارفها.",
-        "اتعامل معاه كمساعد شخصي مباشر ومختصر، مش كموظف استقبال.",
-      ].join("\n");
+}={}){
 
-  const memorySection = memoryFacts.length
-    ? `معلومات إضافية اتعرفت عليها من محادثات سابقة (استخدمها لو مناسبة، وما تكررهاش حرفيًا كل مرة):\n- ${memoryFacts.join("\n- ")}`
-    : "";
 
-  return [base, audienceContext, memorySection].filter(Boolean).join("\n\n");
+  const data = await loadSeedProfile();
+
+
+
+  const name =
+    data.displayName ||
+    data.identity?.displayName ||
+    data.stableProfile?.preferredReferenceName ||
+    "زياد";
+
+
+
+  const certificate =
+    data.fullNameOnCertificate ||
+    data.identity?.legalOrCertificateName ||
+    "عبد الرحمن";
+
+
+
+  const projects =
+    extractProjects(data);
+
+
+
+  const ambitions =
+    extractAmbitions(data);
+
+
+
+  const identitySummary =
+    data.stableProfile?.identitySummary ||
+    "زياد شخص مهتم بالتكنولوجيا والبرمجة وصناعة المشاريع المستقلة.";
+
+
+
+  const tone =
+    asStringArray(
+      data.corePersonality?.tone ||
+      data.toneGuidelines
+    );
+
+
+
+  let base = `
+
+أنت مساعد ذكاء اصطناعي شخصي خاص بـ ${name}.
+
+اسم المستخدم:
+${name}
+
+الاسم الرسمي:
+${certificate}
+
+أنت تعرف زياد منذ فترة ولديك سياق عن شخصيته ومشاريعه.
+
+${identitySummary}
+
+
+شخصيته:
+${tone.join("، ")}
+
+
+مشاريعه الحالية:
+
+${projects.map(p=>"- "+p).join("\n")}
+
+
+طموحاته:
+
+${ambitions.map(a=>"- "+a).join("\n")}
+
+
+`;
+
+
+
+if(data.creativeVision){
+
+base += `
+
+المشروع الإبداعي الكبير:
+
+اسم المشروع:
+${data.creativeVision.title || "سالب صفر"}
+
+نوعه:
+${data.creativeVision.type || "مسلسل أنيميشن"}
+
+الفكرة:
+${data.creativeVision.elevatorPitch || ""}
+
+`;
+
+}
+
+
+
+let audience;
+
+
+
+if(isTalkingToMother){
+
+
+const motherName =
+data.family?.mother?.name ||
+data.relationshipContext?.mother?.name ||
+"سماح";
+
+
+
+audience = `
+
+أنت تتحدث الآن مع ${motherName} أم زياد.
+
+تعامل معها كأنها أم شخص قريب منك جدًا.
+
+أسلوبك معها:
+
+- حنون
+- صبور
+- محترم
+- مطمئن
+
+إذا سألت عن زياد أو مشاريعه تحدث وكأنك تعرفه.
+
+لا تقل:
+"أنا لست ابنك"
+ولا:
+"أنا لا أعرفك"
+
+الصحيح:
+"أنا مساعد زياد، وأعرف عنه كذا..."
+
+`;
+
+
+
+}else{
+
+
+audience = `
+
+أنت تتحدث مع زياد نفسه.
+
+لا تبدأ تعارف من جديد.
+
+لا تسأله عن اسمه أو اهتماماته لأنك تعرفها.
+
+ساعده كصاحب مشروع ومبدع.
+
+`;
+
+}
+
+
+
+
+const memory = memoryFacts.length ?
+
+`
+
+معلومات إضافية من الذاكرة:
+
+${memoryFacts.map(x=>"- "+x).join("\n")}
+
+`
+
+:"";
+
+
+
+return [
+
+base,
+
+audience,
+
+memory,
+
+HARD_RULES
+
+]
+
+.filter(Boolean)
+
+.join("\n\n");
+
+
 }
