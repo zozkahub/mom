@@ -1,102 +1,238 @@
 // netlify/functions/chat.js
-// بروكسي بين الموقع و OpenRouter. المفتاح بيتقرا من Environment Variable اسمها OPENROUTER_API_KEY
-// (تتظبط من لوحة تحكم Netlify: Site settings → Environment variables) — أبدًا متتكتبش هنا في الكود.
+// OpenRouter proxy for Personal AI Assistant
 
-// رتّب النماذج من الأقوى للأخف. الاتنين الأولانيين هما اللي اتحددوا، والباقي احتياطي.
-// ملحوظة: أسماء النماذج المجانية على OpenRouter بتتغيّر بمرور الوقت، فكل شوية افتح
-// https://openrouter.ai/models?max_price=0 وحدّث القايمة دي لو لقيت موديل وقف عن الشغل.
 const MODEL_CHAIN = [
   "inclusionai/ling-3.0-flash:free",
-  "poolside/laguna-s-2.1:free",
-  "meta-llama/llama-3.3-70b-instruct:free",
   "google/gemini-2.0-flash-exp:free",
   "qwen/qwen-2.5-72b-instruct:free",
-  "mistralai/mistral-7b-instruct:free",
-  "google/gemma-2-9b-it:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "mistralai/mistral-7b-instruct:free"
 ];
 
-const HEADERS = {
-  "Content-Type": "application/json",
-};
 
 exports.handler = async (event) => {
+
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
+    return {
+      statusCode: 405,
+      body: JSON.stringify({
+        error: "Method Not Allowed"
+      })
+    };
   }
 
+
   const apiKey = process.env.OPENROUTER_API_KEY;
+
+
   if (!apiKey) {
     return {
       statusCode: 500,
       body: JSON.stringify({
-        error: "OPENROUTER_API_KEY مش متظبطة في متغيرات البيئة على Netlify.",
-      }),
+        error: "OPENROUTER_API_KEY غير موجود"
+      })
     };
   }
 
-  let payload;
+
+
+  let body;
+
   try {
-    payload = JSON.parse(event.body || "{}");
+    body = JSON.parse(event.body);
+
   } catch {
-    return { statusCode: 400, body: JSON.stringify({ error: "Bad JSON" }) };
+
+    return {
+      statusCode:400,
+      body:JSON.stringify({
+        error:"JSON غير صحيح"
+      })
+    };
+
   }
 
-  const { messages, systemPrompt } = payload;
-  if (!Array.isArray(messages)) {
-    return { statusCode: 400, body: JSON.stringify({ error: "messages مطلوبة" }) };
+
+
+  const {
+    messages,
+    systemPrompt
+  } = body;
+
+
+
+  if(!Array.isArray(messages)){
+
+    return {
+      statusCode:400,
+      body:JSON.stringify({
+        error:"messages غير موجودة"
+      })
+    };
+
   }
 
-  const fullMessages = systemPrompt
-    ? [{ role: "system", content: systemPrompt }, ...messages]
-    : messages;
 
-  let lastError = null;
 
-  for (const model of MODEL_CHAIN) {
-    try {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          ...HEADERS,
-          Authorization: `Bearer ${apiKey}`,
-          "HTTP-Referer": "https://example.netlify.app",
-          "X-Title": "Personal Assistant",
-        },
-        body: JSON.stringify({
-          model,
-          messages: fullMessages,
-          temperature: 0.7,
-        }),
-      });
+  const finalMessages =
+    systemPrompt
+    ?
+    [
+      {
+        role:"system",
+        content:systemPrompt
+      },
+      ...messages
+    ]
+    :
+    messages;
 
-      if (!res.ok) {
-        lastError = `${model}: HTTP ${res.status}`;
-        continue; // جرّب الموديل اللي بعده
+
+
+
+  let errors = [];
+
+
+
+  for(const model of MODEL_CHAIN){
+
+
+    try{
+
+
+      const response = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+
+          method:"POST",
+
+          headers:{
+
+            "Content-Type":"application/json",
+
+            "Authorization":`Bearer ${apiKey}`,
+
+            "HTTP-Referer":"https://your-site.netlify.app",
+
+            "X-Title":"Ziad Personal AI"
+
+          },
+
+
+          body:JSON.stringify({
+
+            model:model,
+
+            messages:finalMessages,
+
+            temperature:0.6,
+
+            max_tokens:2000
+
+          })
+
+        }
+      );
+
+
+
+      const text = await response.text();
+
+
+
+      let data;
+
+      try{
+
+        data = JSON.parse(text);
+
+      }catch{
+
+        data = {};
+
       }
 
-      const data = await res.json();
-      const reply = data?.choices?.[0]?.message?.content;
 
-      if (!reply) {
-        lastError = `${model}: رد فاضي`;
+
+
+      if(!response.ok){
+
+
+        errors.push(
+          `${model}: ${response.status} ${text}`
+        );
+
+
         continue;
+
       }
+
+
+
+      const reply =
+        data?.choices?.[0]?.message?.content;
+
+
+
+      if(!reply){
+
+
+        errors.push(
+          `${model}: no reply`
+        );
+
+
+        continue;
+
+      }
+
+
+
 
       return {
-        statusCode: 200,
-        body: JSON.stringify({ reply, modelUsed: model }),
+
+        statusCode:200,
+
+        body:JSON.stringify({
+
+          reply,
+
+          modelUsed:model
+
+        })
+
       };
-    } catch (err) {
-      lastError = `${model}: ${err.message}`;
-      continue;
+
+
+
+    }catch(error){
+
+
+      errors.push(
+        `${model}: ${error.message}`
+      );
+
+
     }
+
+
   }
 
+
+
   return {
-    statusCode: 502,
-    body: JSON.stringify({
-      error: "كل النماذج فشلت في الرد، حاول تاني كمان شوية.",
-      details: lastError,
-    }),
+
+    statusCode:502,
+
+    body:JSON.stringify({
+
+      error:"كل النماذج فشلت",
+
+      details:errors
+
+    })
+
   };
+
+
 };
