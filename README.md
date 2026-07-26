@@ -66,7 +66,7 @@ netlify dev
   `users/{uid}/memory/profile`. تقدري تشوفيها أو توقفيها من صفحة الإعدادات.
 
 ## تبديل النماذج (fallback)
-النماذج مرتبة في `netlify/functions/chat.js` (`MODEL_CHAIN`). لو موديل فشل أو
+النماذج مرتبة في `netlify/functions/chat.js` (`PREFERRED_FREE_MODELS`)، وتقدري تغيّريها من Netlify env عبر `OPENROUTER_MODEL_CHAIN`. لو موديل فشل أو
 اتقفل، السيرفر بيجرب اللي بعده تلقائيًا. أسماء الموديلات المجانية على OpenRouter
 بتتغير، فراجعي https://openrouter.ai/models?max_price=0 بين فترة وفترة وحدّثي القايمة.
 

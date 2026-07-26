@@ -6,24 +6,23 @@
 // OPENROUTER_REFERER          optional but recommended
 // OPENROUTER_APP_TITLE        optional
 // OPENROUTER_REQUIRE_ZDR      optional: "true" to prefer ZDR models only
-// OPENROUTER_CEILING_MS       optional
 // OPENROUTER_MODEL_TIMEOUT_MS  optional
 // OPENROUTER_DISCOVERY_TIMEOUT_MS optional
 // OPENROUTER_MAX_TOKENS       optional
 // OPENROUTER_TEMPERATURE      optional
+// OPENROUTER_MAX_MODELS       optional
+// OPENROUTER_MODEL_CHAIN      optional comma-separated model IDs
 
 const BASE_URL = "https://openrouter.ai";
 
-const ROUTER_MODEL = "openrouter/free";
-
-// Keep a few known free variants as fallback. Free availability changes frequently.
+// Keep a few known free text/chat variants as fallback. Free availability changes frequently.
 const PREFERRED_FREE_MODELS = [
   "inclusionai/ling-3.0-flash:free",
   "poolside/laguna-s-2.1:free",
-  "openai/gpt-oss-120b:free",
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "qwen/qwen-2.5-72b-instruct:free",
   "poolside/laguna-xs-2.1:free",
+  "openai/gpt-oss-20b:free",
+  "cohere/north-mini-code:free",
+  "google/gemma-4-26b-a4b-it:free",
 ];
 
 const JSON_HEADERS = {
@@ -41,10 +40,10 @@ const RESPONSE_HEADERS = {
   ...CORS_HEADERS,
 };
 
-const CEILING_MS = Number(process.env.OPENROUTER_CEILING_MS || 8500);
-const PER_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_MODEL_TIMEOUT_MS || 5000);
+const REQUEST_TIMEOUT_MS = Number(process.env.OPENROUTER_MODEL_TIMEOUT_MS || 8500);
 const MODEL_DISCOVERY_TIMEOUT_MS = Number(process.env.OPENROUTER_DISCOVERY_TIMEOUT_MS || 2500);
 const MODEL_LIST_CACHE_TTL_MS = 60 * 60 * 1000;
+const MAX_MODELS_PER_REQUEST = Number(process.env.OPENROUTER_MAX_MODELS || 5);
 
 let modelListCache = { list: null, fetchedAt: 0 };
 
@@ -77,6 +76,29 @@ function getAppTitle() {
 
 function getRequireZdr() {
   return String(process.env.OPENROUTER_REQUIRE_ZDR || "").toLowerCase() === "true";
+}
+
+function getConfiguredModelChain() {
+  return unique(
+    String(process.env.OPENROUTER_MODEL_CHAIN || "")
+      .split(",")
+      .map((model) => model.trim())
+  );
+}
+
+function isTextChatModel(model) {
+  const id = String(model?.id || "");
+  const name = String(model?.name || "");
+  const input = model?.architecture?.input_modalities || [];
+  const output = model?.architecture?.output_modalities || [];
+  const params = model?.supported_parameters || [];
+
+  if (!id || !input.includes("text") || !output.includes("text")) return false;
+  if (output.some((modality) => modality !== "text")) return false;
+  if (Array.isArray(params) && !params.includes("max_tokens")) return false;
+
+  // Free catalogs can include safety, music, audio, and other task-specific models.
+  return !/safety|moderation|guard|lyria|music|audio|speech|tts/i.test(`${id} ${name}`);
 }
 
 function normalizeContent(rawContent) {
@@ -125,6 +147,11 @@ async function readTextResponse(res) {
 
 async function discoverFreeModels() {
   const now = Date.now();
+  const configured = getConfiguredModelChain();
+
+  if (configured.length) {
+    return configured;
+  }
 
   if (modelListCache.list && now - modelListCache.fetchedAt < MODEL_LIST_CACHE_TTL_MS) {
     return modelListCache.list;
@@ -151,43 +178,38 @@ async function discoverFreeModels() {
     const discovered = unique(
       models
         .filter((m) => {
-          const id = String(m?.id || "");
           const pricing = m?.pricing;
-
           const freeByPricing =
             pricing &&
             Number(pricing.prompt) === 0 &&
             Number(pricing.completion) === 0;
 
-          const freeBySlug = id.endsWith(":free") || id === ROUTER_MODEL;
-
-          return freeByPricing || freeBySlug;
+          return freeByPricing && isTextChatModel(m);
         })
         .map((m) => String(m.id))
     );
 
     const ordered = unique([
-      ROUTER_MODEL,
       ...PREFERRED_FREE_MODELS.filter((id) => discovered.includes(id)),
       ...discovered.filter((id) => !PREFERRED_FREE_MODELS.includes(id)),
     ]);
 
     modelListCache = {
-      list: ordered.length ? ordered : [ROUTER_MODEL, ...PREFERRED_FREE_MODELS],
+      list: ordered.length ? ordered : PREFERRED_FREE_MODELS,
       fetchedAt: now,
     };
 
-    console.log("[model-discovery] free chain:", modelListCache.list.slice(0, 10));
+    console.log("[model-discovery] free chain:", modelListCache.list.slice(0, MAX_MODELS_PER_REQUEST));
     return modelListCache.list;
   } catch (err) {
     cancel();
     console.error("[model-discovery] fallback chain used:", err?.message || err);
-    return unique([ROUTER_MODEL, ...PREFERRED_FREE_MODELS]);
+    return PREFERRED_FREE_MODELS;
   }
 }
 
-async function callModel(model, fullMessages, apiKey) {
-  const { signal, cancel } = withTimeout(PER_MODEL_TIMEOUT_MS);
+async function callModelChain(models, fullMessages, apiKey) {
+  const { signal, cancel } = withTimeout(REQUEST_TIMEOUT_MS);
 
   try {
     const res = await fetch(`${BASE_URL}/api/v1/chat/completions`, {
@@ -196,10 +218,11 @@ async function callModel(model, fullMessages, apiKey) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
         "HTTP-Referer": getReferer(),
-        "X-Title": getAppTitle(),
+        "X-OpenRouter-Title": getAppTitle(),
+        "X-OpenRouter-Metadata": "enabled",
       },
       body: JSON.stringify({
-        model,
+        models,
         messages: fullMessages,
         temperature: Number(process.env.OPENROUTER_TEMPERATURE || 0.7),
         max_tokens: Number(process.env.OPENROUTER_MAX_TOKENS || 2000),
@@ -237,7 +260,7 @@ async function callModel(model, fullMessages, apiKey) {
       };
     }
 
-    return { ok: true, text: reply };
+    return { ok: true, text: reply, model: data?.model || models[0] };
   } catch (err) {
     cancel();
 
@@ -245,7 +268,7 @@ async function callModel(model, fullMessages, apiKey) {
       return {
         ok: false,
         status: 0,
-        detail: `timeout after ${PER_MODEL_TIMEOUT_MS}ms`,
+        detail: `timeout after ${REQUEST_TIMEOUT_MS}ms`,
       };
     }
 
@@ -339,39 +362,31 @@ exports.handler = async (event) => {
     : messages;
 
   const chain = await discoverFreeModels();
-  const attempts = [];
-  const startedAt = Date.now();
+  const models = chain.slice(0, Math.max(1, MAX_MODELS_PER_REQUEST));
 
-  for (const model of chain) {
-    const elapsed = Date.now() - startedAt;
+  console.log("[chat] trying model chain:", models);
+  const result = await callModelChain(models, fullMessages, apiKey);
 
-    if (elapsed + PER_MODEL_TIMEOUT_MS > CEILING_MS) {
-      console.warn(`[chat] stopping early to stay within ceiling (${elapsed}ms elapsed)`);
-      break;
-    }
+  if (result.ok) {
+    return {
+      statusCode: 200,
+      headers: RESPONSE_HEADERS,
+      body: JSON.stringify({
+        reply: result.text,
+        modelUsed: result.model,
+      }),
+    };
+  }
 
-    console.log(`[chat] trying model: ${model}`);
-    const result = await callModel(model, fullMessages, apiKey);
-
-    if (result.ok) {
-      return {
-        statusCode: 200,
-        headers: RESPONSE_HEADERS,
-        body: JSON.stringify({
-          reply: result.text,
-          modelUsed: model,
-        }),
-      };
-    }
-
-    attempts.push({
-      model,
+  const attempts = [
+    {
+      models,
       status: result.status,
       detail: result.detail,
-    });
+    },
+  ];
 
-    console.error(`[chat] failed: ${model}`, result);
-  }
+  console.error("[chat] failed model chain:", result);
 
   return {
     statusCode: 502,
@@ -379,7 +394,7 @@ exports.handler = async (event) => {
     body: JSON.stringify({
       error: diagnoseCommonIssue(attempts) || "All models failed to respond.",
       attempts,
-      chainTried: chain,
+      chainTried: models,
     }),
   };
 };
