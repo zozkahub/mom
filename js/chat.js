@@ -63,7 +63,7 @@ export async function sendMessage(uid, chatId, { text, isMotherMode, history }) 
   });
 
   const memory = await getMemoryProfile(uid);
-  const facts = memory.enabled !== false ? memory.facts || [] : [];
+  const facts = memory.enabled !== false ? (isMotherMode ? memory.motherFacts : memory.facts) || [] : [];
 
   const systemPrompt = await buildSystemPrompt({
     memoryFacts: facts,
@@ -94,10 +94,11 @@ export async function sendMessage(uid, chatId, { text, isMotherMode, history }) 
 
   await updateDoc(doc(db, "users", uid, "chats", chatId), { updatedAt: serverTimestamp() });
 
-  // استخلاص ذاكرة طويلة المدى في الخلفية (مش هيأخر الرد على المستخدم)
+  // استخلاص ذاكرة طويلة المدى في الخلفية — من رسايل المستخدم بس، مش من رد الـ AI (مش هيأخر الرد على المستخدم)
   if (memory.enabled !== false) {
-    extractFacts([...apiMessages, { role: "assistant", content: reply }].slice(-6))
-      .then((newFacts) => newFacts.length && addMemoryFacts(uid, newFacts))
+    const recentUserTexts = apiMessages.filter((m) => m.role === "user").map((m) => m.content).slice(-4);
+    extractFacts(recentUserTexts)
+      .then((newFacts) => newFacts.length && addMemoryFacts(uid, newFacts, isMotherMode))
       .catch(() => {});
   }
 
