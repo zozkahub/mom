@@ -1,219 +1,296 @@
 // netlify/functions/chat.js
-// بروكسي بين الموقع و OpenRouter. المفتاح بيتقرا من Environment Variable اسمها OPENROUTER_API_KEY
-// (تتظبط من لوحة تحكم Netlify: Site settings → Environment variables) — أبدًا متتكتبش هنا في الكود.
+// Netlify proxy between the site and OpenRouter.
 //
-// ═══════════════════════════════════════════════════════════════════════════
-// ⚠️ لو "كل النماذج فشلت في الرد" بيظهر مع كل طلب من غير استثناء، السبب غالبًا
-// مش في الكود أصلًا. اتأكد الأول من الاتنين دول في حساب OpenRouter بتاعك:
-//
-//   1) https://openrouter.ai/settings/privacy
-//      لازم تفعّل "Enable training and logging" (خانة الموديلات المجانية).
-//      من غيرها أي موديل :free بيرجع فورًا:
-//        404  "No endpoints found matching your data policy"
-//      وده بيحصل مع كل موديل في القايمة في نفس اللحظة، فحاسس إن "كله فشل"
-//      مع إنها فعليًا مشكلة إعداد واحدة بس. الكود تحت بقى بيكتشف الحالة دي
-//      بالذات ويقولك عليها صراحة بدل ما تقعد تلف.
-//
-//   2) https://openrouter.ai/activity
-//      الموديلات المجانية سقفها 20 طلب/دقيقة، و 50 طلب/يوم لو الحساب من غير
-//      رصيد، أو 1000 طلب/يوم لو ضفت 10$ رصيد (حتى من غير ما تستخدمه). السقف
-//      مشترك بين كل الموديلات المجانية مع بعض، مش لكل موديل لوحده — فلو بتختبر
-//      كتير في نفس اليوم ممكن توصل للسقف بسرعة.
-//
-// غير الاتنين دول، أسماء الموديلات المجانية بتتغيّر باستمرار (شركات زي جوجل
-// وميسترال شالوا كل نسخهم المجانية من OpenRouter تمامًا وقت ما اتكتب الملف ده،
-// وموديلات تانية بتتضاف كل شوية بعروض مؤقتة). عشان كده الكود تحت بقى مبيعتمدش
-// على قايمة ثابتة بس — بيجيب القايمة اللايف من OpenRouter نفسه الأول.
-// ═══════════════════════════════════════════════════════════════════════════
+// Useful env vars:
+// - OPENROUTER_API_KEY
+// - OPENROUTER_REFERER
+// - OPENROUTER_APP_TITLE
+// - OPENROUTER_CEILING_MS
+// - OPENROUTER_MODEL_TIMEOUT_MS
+// - OPENROUTER_DISCOVERY_TIMEOUT_MS
+// - OPENROUTER_MAX_TOKENS
+// - OPENROUTER_TEMPERATURE
 
-// قايمة احتياطية (fallback) لو جلب القايمة اللايف فشل لأي سبب. رتّبها من
-// الأقوى للأخف. اتأكدت منها وقت كتابة الملف (يوليو 2026) عن طريق:
-// https://openrouter.ai/models?max_price=0 — بس زي ما شرحنا فوق، الكود
-// مش هيقف عندها لو قدر يجيب حاجة أحدث لايف.
+const BASE_URL = "https://openrouter.ai";
+
 const PREFERRED_FREE_MODELS = [
-  "inclusionai/ling-3.0-flash:free", // ⚠️ عرض مجاني مؤقت بينتهي 3 أغسطس 2026
+  "inclusionai/ling-3.0-flash:free",
   "poolside/laguna-s-2.1:free",
-  "meta-llama/llama-3.3-70b-instruct:free",
   "openai/gpt-oss-120b:free",
-  "poolside/laguna-xs-2.1:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
   "qwen/qwen-2.5-72b-instruct:free",
+  "poolside/laguna-xs-2.1:free",
+  "openrouter/free",
 ];
 
-const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
+const JSON_HEADERS = {
+  "Content-Type": "application/json; charset=utf-8",
+};
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
-const RESPONSE_HEADERS = { ...JSON_HEADERS, ...CORS_HEADERS };
 
-// Netlify بتقفل الـ function افتراضيًا بعد 10 ثواني (لحد 26 ثانية لو رفعت
-// خطتك وطلبت من الدعم). الأرقام دي بتوزّع الوقت ده بين جلب قايمة الموديلات
-// ومحاولات النداء، وبتوقف بدري بما يكفي إننا نرجّع خطأ منظّم (JSON) بدل ما
-// Netlify تقفل الدالة بنفسها وترجع خطأ فاضي مالوش شكل تقدر تتعامل معاه.
-// ملحوظة مهمة: الشيك قبل كل محاولة بيتأكد إن حتى أسوأ سيناريو (الموديل يعلّق
-// للمهلة كاملة) مش هيخرجنا برّه CEILING_MS — مش بس إننا لسه تحت السقف دلوقتي.
-const CEILING_MS = 8500;
-const PER_MODEL_TIMEOUT_MS = 5000;
-const MODEL_DISCOVERY_TIMEOUT_MS = 2000;
-const MODEL_LIST_CACHE_TTL_MS = 60 * 60 * 1000; // ساعة
+const RESPONSE_HEADERS = {
+  ...JSON_HEADERS,
+  ...CORS_HEADERS,
+};
 
-// كاش بسيط في الذاكرة. بيفيد بس لما نفس نسخة الـ function تكون لسه "دافية"
-// (warm) من طلب سابق؛ مع cold start جديد هيترجع يجيب القايمة تاني، وده طبيعي
-// وموصوف عمدًا — أفضل من كاش يفضل يقول معلومة قديمة للأبد.
+const CEILING_MS = Number(process.env.OPENROUTER_CEILING_MS || 8500);
+const PER_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_MODEL_TIMEOUT_MS || 5000);
+const MODEL_DISCOVERY_TIMEOUT_MS = Number(process.env.OPENROUTER_DISCOVERY_TIMEOUT_MS || 2500);
+const MODEL_LIST_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
 let modelListCache = { list: null, fetchedAt: 0 };
+
+function unique(list) {
+  return [...new Set((list || []).filter(Boolean))];
+}
 
 function withTimeout(ms) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
-  return { signal: controller.signal, cancel: () => clearTimeout(timer) };
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timer),
+  };
 }
 
-/**
- * بيجيب الموديلات المجانية "لايف" من OpenRouter نفسه (endpoint عام، مش محتاج
- * مفتاح)، وبيحط اللي في PREFERRED_FREE_MODELS الأول لو لسه شغالة فعلًا، وبعدين
- * أي موديل مجاني تاني اكتشفه كاحتياطي إضافي. لو الجلب فشل أو طوّل أكتر من
- * MODEL_DISCOVERY_TIMEOUT_MS، بيرجع القايمة الثابتة على طول من غير ما يعطّل
- * أو يفشّل الطلب الأساسي.
- */
+function getReferer() {
+  return (
+    process.env.OPENROUTER_REFERER ||
+    process.env.URL ||
+    process.env.DEPLOY_PRIME_URL ||
+    process.env.DEPLOY_URL ||
+    "http://localhost"
+  );
+}
+
+function getAppTitle() {
+  return process.env.OPENROUTER_APP_TITLE || "Personal Assistant";
+}
+
+function normalizeContent(rawContent) {
+  if (Array.isArray(rawContent)) {
+    return rawContent
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (!part || typeof part !== "object") return "";
+        if (typeof part.text === "string") return part.text;
+        if (typeof part.content === "string") return part.content;
+        return "";
+      })
+      .join("")
+      .trim();
+  }
+
+  if (typeof rawContent === "string") return rawContent.trim();
+  return "";
+}
+
+function extractErrorDetailFromResponseText(rawText, statusCode) {
+  const fallback = `HTTP ${statusCode}`;
+  if (!rawText) return fallback;
+
+  try {
+    const parsed = JSON.parse(rawText);
+    return (
+      parsed?.error?.message ||
+      parsed?.error ||
+      parsed?.message ||
+      rawText.slice(0, 300) ||
+      fallback
+    );
+  } catch {
+    return rawText.slice(0, 300) || fallback;
+  }
+}
+
+async function readTextResponse(res) {
+  try {
+    return await res.text();
+  } catch {
+    return "";
+  }
+}
+
 async function getFreeModelChain() {
   const now = Date.now();
+
   if (modelListCache.list && now - modelListCache.fetchedAt < MODEL_LIST_CACHE_TTL_MS) {
     return modelListCache.list;
   }
 
   const { signal, cancel } = withTimeout(MODEL_DISCOVERY_TIMEOUT_MS);
+
   try {
-    const res = await fetch("https://openrouter.ai/api/v1/models", { signal });
+    const res = await fetch(`${BASE_URL}/api/v1/models?max_price=0`, { signal });
     cancel();
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
 
     const data = await res.json();
-    const freeIds = new Set(
-      (data?.data || [])
+    const liveModels = Array.isArray(data?.data) ? data.data : [];
+
+    const freeIds = unique(
+      liveModels
         .filter((m) => {
-          const p = m?.pricing;
-          return p && Number(p.prompt) === 0 && Number(p.completion) === 0;
+          const id = String(m?.id || "");
+          const pricing = m?.pricing;
+
+          const isFreeByPricing =
+            pricing &&
+            Number(pricing.prompt) === 0 &&
+            Number(pricing.completion) === 0;
+
+          const isFreeBySlug = /:free$/.test(id) || id === "openrouter/free";
+
+          return isFreeByPricing || isFreeBySlug;
         })
-        .map((m) => m.id)
+        .map((m) => String(m.id))
     );
 
-    if (freeIds.size === 0) throw new Error("مفيش موديلات مجانية في الرد");
+    const ordered = unique([
+      ...PREFERRED_FREE_MODELS.filter((id) => freeIds.includes(id)),
+      ...freeIds.filter((id) => !PREFERRED_FREE_MODELS.includes(id)),
+    ]);
 
-    const ordered = [
-      ...PREFERRED_FREE_MODELS.filter((id) => freeIds.has(id)),
-      ...[...freeIds].filter((id) => !PREFERRED_FREE_MODELS.includes(id)),
-    ];
+    const finalChain = unique([
+      ...ordered,
+      "openrouter/free",
+    ]);
 
-    modelListCache = { list: ordered, fetchedAt: now };
-    console.log(
-      `[model-discovery] لقيت ${freeIds.size} موديل مجاني لايف، هجرب بالترتيب ده أول 8:`,
-      ordered.slice(0, 8)
-    );
-    return ordered;
+    modelListCache = {
+      list: finalChain.length ? finalChain : PREFERRED_FREE_MODELS,
+      fetchedAt: now,
+    };
+
+    console.log("[model-discovery] free models chain:", modelListCache.list.slice(0, 10));
+
+    return modelListCache.list;
   } catch (err) {
     cancel();
-    console.error("[model-discovery] فشل الجلب اللايف، هرجع للقايمة الثابتة:", err.message);
-    return PREFERRED_FREE_MODELS;
+    console.error("[model-discovery] falling back to static model chain:", err?.message || err);
+    return unique(PREFERRED_FREE_MODELS);
   }
 }
 
-/**
- * بينده موديل واحد على OpenRouter، وبيرجّع نتيجة منظّمة دايمًا (نجاح بنصه، أو
- * فشل برسالة الخطأ *الحقيقية* اللي رجعها OpenRouter) بدل ما يبلع التفاصيل في
- * مجرد رقم HTTP status زي الكود القديم.
- */
 async function callModel(model, fullMessages, apiKey) {
   const { signal, cancel } = withTimeout(PER_MODEL_TIMEOUT_MS);
+
   try {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    const response = await fetch(`${BASE_URL}/api/v1/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
-        "HTTP-Referer": process.env.URL || "https://example.netlify.app",
-        "X-Title": "Personal Assistant",
+        "HTTP-Referer": getReferer(),
+        "X-Title": getAppTitle(),
       },
-      body: JSON.stringify({ model, messages: fullMessages, temperature: 0.7 }),
+      body: JSON.stringify({
+        model,
+        messages: fullMessages,
+        temperature: Number(process.env.OPENROUTER_TEMPERATURE || 0.7),
+        max_tokens: Number(process.env.OPENROUTER_MAX_TOKENS || 2000),
+      }),
       signal,
     });
+
     cancel();
 
-    if (!res.ok) {
-      // اقرا الـ body كنص مرة واحدة بس (مينفعش تقرا الـ response مرتين)،
-      // وبعدين حاول تفسّره كـ JSON عشان تطلع رسالة OpenRouter الحقيقية.
-      let detail = `HTTP ${res.status}`;
-      try {
-        const raw = await res.text();
-        if (raw) {
-          try {
-            const errBody = JSON.parse(raw);
-            detail = errBody?.error?.message || raw.slice(0, 200);
-          } catch {
-            detail = raw.slice(0, 200);
-          }
-        }
-      } catch {
-        // مقدرش يقرا الـ body خالص، سيب الافتراضي HTTP status
-      }
-      return { ok: false, status: res.status, detail };
+    const rawText = await readTextResponse(response);
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        detail: extractErrorDetailFromResponseText(rawText, response.status),
+      };
     }
 
-    const data = await res.json();
+    let data = {};
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      data = {};
+    }
+
     const msg = data?.choices?.[0]?.message;
-    const rawContent = msg?.content;
-    // بعض الموديلات بترجع content كنص عادي، وبعضها كـ array من الأجزاء
-    // (خصوصًا الموديلات اللي بتدعم تفكير/reasoning منفصل عن الرد النهائي).
-    const text = Array.isArray(rawContent)
-      ? rawContent.map((p) => (typeof p?.text === "string" ? p.text : "")).join("").trim()
-      : typeof rawContent === "string"
-      ? rawContent.trim()
-      : "";
+    const reply = normalizeContent(msg?.content);
 
-    if (!text) {
-      const reason = msg?.refusal ? `الموديل رفض الرد: ${msg.refusal}` : "رجّع رد فاضي";
-      return { ok: false, status: 200, detail: reason };
+    if (!reply) {
+      const refusal = msg?.refusal;
+      return {
+        ok: false,
+        status: 200,
+        detail: refusal ? `model refusal: ${refusal}` : "empty reply",
+      };
     }
-    return { ok: true, text };
+
+    return {
+      ok: true,
+      text: reply,
+    };
   } catch (err) {
     cancel();
-    if (err.name === "AbortError") {
-      return { ok: false, status: 0, detail: `ملقاش رد خلال ${PER_MODEL_TIMEOUT_MS}ms (timeout)` };
+
+    if (err?.name === "AbortError") {
+      return {
+        ok: false,
+        status: 0,
+        detail: `timeout after ${PER_MODEL_TIMEOUT_MS}ms`,
+      };
     }
-    return { ok: false, status: 0, detail: err.message };
+
+    return {
+      ok: false,
+      status: 0,
+      detail: err?.message || "unknown error",
+    };
   }
 }
 
-/** بيدوّر على نمط مألوف في كل المحاولات الفاشلة عشان يديك تشخيص مباشر بدل رسالة عامة. */
 function diagnoseCommonIssue(attempts) {
-  if (attempts.length === 0) return null;
-  if (attempts.every((a) => a.status === 404 && /data policy/i.test(a.detail || ""))) {
-    return (
-      "كل الموديلات رجعت 'No endpoints found matching your data policy' — " +
-      "ده شبه مؤكد إن إعداد الخصوصية في حسابك مش مفعّل. روح https://openrouter.ai/settings/privacy " +
-      "وفعّل الخيار الخاص بنشر بيانات الموديلات المجانية (training/logging)."
-    );
+  if (!attempts.length) return null;
+
+  const details = attempts.map((a) => String(a.detail || "")).join(" | ");
+
+  if (attempts.some((a) => a.status === 401 || a.status === 403)) {
+    return "OpenRouter رفض الـ API key (401/403). راجع OPENROUTER_API_KEY في Netlify وتأكد إنه صحيح 100%.";
   }
+
   if (attempts.every((a) => a.status === 429)) {
-    return (
-      "كل المحاولات رجعت 429 (Rate Limit) — يمكن وصلت لسقف الطلبات اليومي أو الدقيقة " +
-      "للموديلات المجانية في حسابك. شوف https://openrouter.ai/activity، وممكن ضيف 10$ رصيد " +
-      "يرفع السقف من 50 لـ 1000 طلب في اليوم حتى لو مش هتستخدم الرصيد ده."
-    );
+    return "كل المحاولات رجعت 429 (rate limit). غالبًا وصلت لسقف الموديلات المجانية في OpenRouter.";
   }
+
+  if (/No endpoints found matching your data policy/i.test(details) || /data policy/i.test(details)) {
+    return "OpenRouter رفض الموديلات الحرة بسبب إعدادات data policy/privacy في الحساب. راجع إعدادات الخصوصية للموديلات المجانية.";
+  }
+
   if (attempts.every((a) => a.status === 404)) {
-    return (
-      "كل الموديلات رجعت 404 (مش موجودة/اتشالت) — أسماء الموديلات في القايمة قديمة. " +
-      "افتح https://openrouter.ai/models?max_price=0 وحدّث PREFERRED_FREE_MODELS."
-    );
+    return "كل الموديلات رجعت 404. غالبًا أسماء الموديلات قديمة أو اتشالت من OpenRouter.";
   }
+
+  if (attempts.every((a) => a.status === 0 && /timeout/i.test(String(a.detail || "")))) {
+    return "كل المحاولات انتهت بمهلة زمنية. قلل عدد المحاولات أو زوّد مهلة كل موديل قليلًا.";
+  }
+
   return null;
 }
 
 exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 204, headers: RESPONSE_HEADERS, body: "" };
+    return {
+      statusCode: 204,
+      headers: RESPONSE_HEADERS,
+      body: "",
+    };
   }
+
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,
@@ -228,7 +305,7 @@ exports.handler = async (event) => {
       statusCode: 500,
       headers: RESPONSE_HEADERS,
       body: JSON.stringify({
-        error: "OPENROUTER_API_KEY مش متظبطة في متغيرات البيئة على Netlify.",
+        error: "OPENROUTER_API_KEY not set in Netlify environment variables.",
       }),
     };
   }
@@ -237,15 +314,20 @@ exports.handler = async (event) => {
   try {
     payload = JSON.parse(event.body || "{}");
   } catch {
-    return { statusCode: 400, headers: RESPONSE_HEADERS, body: JSON.stringify({ error: "Bad JSON" }) };
+    return {
+      statusCode: 400,
+      headers: RESPONSE_HEADERS,
+      body: JSON.stringify({ error: "Bad JSON" }),
+    };
   }
 
-  const { messages, systemPrompt } = payload;
+  const { messages, systemPrompt } = payload || {};
+
   if (!Array.isArray(messages) || messages.length === 0) {
     return {
       statusCode: 400,
       headers: RESPONSE_HEADERS,
-      body: JSON.stringify({ error: "messages مطلوبة (array فيها عنصر واحد على الأقل)" }),
+      body: JSON.stringify({ error: "messages must be a non-empty array" }),
     };
   }
 
@@ -253,45 +335,46 @@ exports.handler = async (event) => {
     ? [{ role: "system", content: systemPrompt }, ...messages]
     : messages;
 
-  const startedAt = Date.now();
   const chain = await getFreeModelChain();
   const attempts = [];
+  const startedAt = Date.now();
 
   for (const model of chain) {
-    // مش بس "هل احنا لسه تحت السقف دلوقتي؟" — لازم كمان "لو المحاولة دي علّقت
-    // للمهلة كاملة، هل هنعدي السقف؟". من غيرها ممكن محاولتين معلّقتين ورا بعض
-    // يودّونا لضعف PER_MODEL_TIMEOUT_MS من غير ما الشيك يوقفهم.
     const elapsed = Date.now() - startedAt;
+
     if (elapsed + PER_MODEL_TIMEOUT_MS > CEILING_MS) {
-      console.warn(`[chat] قربنا من حد وقت Netlify (استهلكنا ${elapsed}ms)، هوقف المحاولات وأرجع اللي عندي لحد دلوقتي`);
+      console.warn(`[chat] stopping early to stay within ceiling (${elapsed}ms elapsed)`);
       break;
     }
 
-    console.log(`[chat] بجرّب: ${model}`);
+    console.log(`[chat] trying model: ${model}`);
     const result = await callModel(model, fullMessages, apiKey);
 
     if (result.ok) {
-      console.log(`[chat] نجح: ${model}`);
       return {
         statusCode: 200,
         headers: RESPONSE_HEADERS,
-        body: JSON.stringify({ reply: result.text, modelUsed: model }),
+        body: JSON.stringify({
+          reply: result.text,
+          modelUsed: model,
+        }),
       };
     }
 
-    console.error(`[chat] فشل: ${model} -> status=${result.status} detail=${result.detail}`);
-    attempts.push({ model, status: result.status, detail: result.detail });
+    attempts.push({
+      model,
+      status: result.status,
+      detail: result.detail,
+    });
 
-    // 401/403 معناها المفتاح نفسه مرفوض عالميًا — تكملة باقي الموديلات مش
-    // هتفرق لأن السبب واحد للكل، فنوقف على طول ونوفّر الوقت والطلبات.
+    console.error(`[chat] failed: ${model}`, result);
+
     if (result.status === 401 || result.status === 403) {
       return {
         statusCode: 502,
         headers: RESPONSE_HEADERS,
         body: JSON.stringify({
-          error:
-            "الـ API key اتّرفض (401/403) — راجع قيمة OPENROUTER_API_KEY في Netlify، " +
-            "وتأكد إنه منسوخ صح من https://openrouter.ai/settings/keys",
+          error: "API key rejected by OpenRouter (401/403).",
           attempts,
         }),
       };
@@ -302,7 +385,7 @@ exports.handler = async (event) => {
     statusCode: 502,
     headers: RESPONSE_HEADERS,
     body: JSON.stringify({
-      error: diagnoseCommonIssue(attempts) || "كل النماذج فشلت في الرد، حاول تاني كمان شوية.",
+      error: diagnoseCommonIssue(attempts) || "All models failed to respond.",
       attempts,
     }),
   };
