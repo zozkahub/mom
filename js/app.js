@@ -105,7 +105,7 @@ async function initApp(user) {
 
   const memory = await getMemoryProfile(user.uid);
   $("#setting-memory").checked = memory.enabled !== false;
-  renderMemoryFacts(memory.facts || []);
+  renderMemoryFacts(memory.facts || [], memory.motherFacts || []);
 }
 
 let allChats = [];
@@ -209,9 +209,14 @@ $("#setting-memory").addEventListener("change", async (e) => {
   await setMemoryEnabled(currentUser.uid, e.target.checked);
 });
 
-function renderMemoryFacts(facts) {
+function renderMemoryFacts(facts, motherFacts = []) {
   const list = $("#memory-facts-list");
-  list.innerHTML = facts.length
-    ? facts.map((f) => `<li>${escapeHtml(f)}</li>`).join("")
-    : `<li>لسه مفيش حقائق متخزنة</li>`;
+  const ownerItems = facts.map((f) => `<li>${escapeHtml(f)}</li>`).join("");
+  const motherItems = motherFacts.map((f) => `<li>${escapeHtml(f)}</li>`).join("");
+  list.innerHTML = `
+    <li class="memory-group-label">حقائق عن زياد</li>
+    ${ownerItems || `<li>لسه مفيش حقائق متخزنة</li>`}
+    <li class="memory-group-label">حقائق من محادثات سماح</li>
+    ${motherItems || `<li>لسه مفيش حقائق متخزنة</li>`}
+  `;
 }
