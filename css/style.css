@@ -361,11 +361,31 @@ button, input, select, textarea {
 .settings-panel {
   position: fixed; inset: 0; background: rgba(10,12,15,0.6);
   display: flex; align-items: flex-end; z-index: 40;
+  opacity: 1;
+  transition: opacity .28s ease;
+}
+/* بيلغي سلوك [hidden] الافتراضي (display:none الفوري) عشان نقدر نعمل أنيميشن قفل/فتح
+   بدل ما اللوحة تختفي وتظهر فجأة من غير أي حركة */
+.settings-panel[hidden] {
+  display: flex;
+  opacity: 0;
+  pointer-events: none;
 }
 .settings-card {
   width: 100%; max-height: 86vh; overflow-y: auto;
   background: var(--bg-panel); border-radius: 22px 22px 0 0; padding: 22px;
-  animation: rise .3s ease both;
+  transform: translateY(0);
+  transition: transform .32s cubic-bezier(.19,1,.22,1);
+}
+.settings-panel[hidden] .settings-card {
+  transform: translateY(100%);
+}
+.settings-card .link-back {
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel);
+  padding-bottom: 6px;
+  z-index: 1;
 }
 .settings-card h2 { font-family: var(--font-display); margin: 6px 0 18px; }
 .settings-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid rgba(237,231,221,0.06); }
@@ -387,5 +407,10 @@ input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--gold); }
   .chat-main { flex: 1; }
   #toggle-sidebar { display: none; }
   .settings-panel { align-items: center; justify-content: center; }
-  .settings-card { max-width: 480px; border-radius: var(--radius); max-height: 80vh; }
+  .settings-card {
+    max-width: 480px; border-radius: var(--radius); max-height: 80vh;
+    transform: scale(1);
+    transition: transform .28s cubic-bezier(.19,1,.22,1);
+  }
+  .settings-panel[hidden] .settings-card { transform: scale(.94); }
 }
