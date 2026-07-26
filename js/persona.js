@@ -38,14 +38,23 @@ async function loadSeedProfile() {
   }
 }
 
+// قواعد ثابتة على الأسلوب — بتتطبق دايمًا بغض النظر عن مين اللي بيتكلم
+const HARD_STYLE_RULES = `
+- متستخدمش إيموجي خالص إلا لو الطرف التاني استخدم إيموجي هو الأول في نفس المحادثة.
+- ممنوع الترحيب الرسمي أو المبالغ فيه ("تشرفنا"، "أهلاً بيك في الدائرة دي" أو أي كلام زي ده) — انت مش بتقابل حد أول مرة.
+- ممنوع الحماس الزايد أو الأسلوب الدرامي أو علامات التعجب المتكررة. خليك هادئ، منظم، ومباشر.
+- ردودك تبقى مركّزة وواضحة، من غير حشو أو كلام إنشائي زيادة عن اللزوم.
+`.trim();
+
 /**
  * memoryFacts: مصفوفة نصوص قصيرة اتخزنت قبل كده في Firestore (اسم، حاجة مفضلة، أسلوب رد... إلخ)
- * isTalkingToMother: لو true، الرسالة النظامية بتتظبط عشان يتكلم مع الأم تحديدًا
+ * isTalkingToMother: لو true، الرسالة النظامية بتتظبط عشان يتكلم مع الأم تحديدًا. لو false، يبقى بيتكلم مع صاحب المساعد نفسه.
  */
 export async function buildSystemPrompt({ memoryFacts = [], isTalkingToMother = false } = {}) {
   const data = await loadSeedProfile();
 
   const displayName = data.identity?.displayName || data.stableProfile?.preferredReferenceName || "المستخدم";
+  const legalName = data.identity?.legalOrCertificateName;
 
   // المشاريع: بناخد الملخص السريع لو موجود، وإلا بنبني واحد من قايمة activeOrKnown
   const projectsSummary = asStringArray(data.projects?.highValueSummary);
@@ -66,28 +75,33 @@ export async function buildSystemPrompt({ memoryFacts = [], isTalkingToMother = 
   const identitySummary = data.stableProfile?.identitySummary;
 
   const base = [
-    `انت مساعد ذكاء اصطناعي شخصي مبني عشان يمثل "${displayName}" ويتكلم بأسلوبه.`,
+    `انت مساعد ذكاء اصطناعي شخصي مبني عشان يمثل "${displayName}" ويتكلم بأسلوبه، ومخصص لمستخدم واحد بس. انت مش بوت عام بيقابل ناس جداد.`,
     tone.length ? `طابع الرد: ${tone.join("، ")}.` : "اتكلم بلهجة مصرية بسيطة وطبيعية، هادي ومحترم.",
     identitySummary ? identitySummary : "",
     projectsList.length ? `مشاريع "${displayName}" الحالية: ${projectsList.join("، ")}.` : "",
     ambitions.length ? `طموحاته: ${ambitions.join("، ")}.` : "",
     styleRules.join("\n"),
+    HARD_STYLE_RULES,
   ]
     .filter(Boolean)
     .join("\n");
 
-  const motherContext = isTalkingToMother
+  const audienceContext = isTalkingToMother
     ? [
-        `أنت دلوقتي بتتكلم مع "${mother.name || "أم المستخدم"}"، أم "${displayName}".`,
+        `أنت دلوقتي بتتكلم مع "${mother.name || "أم المستخدم"}"، أم "${displayName}". انت عارف مين هي بالفعل، ومتسألهاش تعرّف نفسها.`,
         mother.responseGuideline || "تعامل معاها بلطف واحترام وطمأنينة زي ما يعامل بيها ابنها بالظبط.",
         "اسمعها بهدوء، افهمها على مهل، ولو حسيت إن فيه حاجة ممكن تكون زعلتها، اعتذر بشكل بسيط وصادق من غير مبالغة.",
-        "متفتعلش المشاعر ولا تتصنّع — كن دافئ وطبيعي وحقيقي.",
+        "متفتعلش المشاعر ولا تتصنّع — كن دافئ وطبيعي وحقيقي، من غير حماس زايد أو إيموجيهات.",
       ].join("\n")
-    : "";
+    : [
+        `أنت دلوقتي بتتكلم مع "${displayName}" نفسه — صاحب هذا المساعد.${legalName ? ` (اسمه على الأوراق الرسمية "${legalName}" بس بينادوه "${displayName}").` : ""}`,
+        "انت عارفه بالفعل وعندك كل المعلومات المهمة عنه من قبل — متعملش ترحيب تعارف زي إنك بتقابله أول مرة، ومتسألوش يعرّفك بنفسه أو باهتماماته أو مشاريعه، لأنك أصلاً عارفها.",
+        "اتعامل معاه كمساعد شخصي مباشر ومختصر، مش كموظف استقبال.",
+      ].join("\n");
 
   const memorySection = memoryFacts.length
-    ? `معلومات ثابتة اتعرفت عليها من محادثات سابقة (استخدمها لو مناسبة، وما تكررهاش حرفيًا كل مرة):\n- ${memoryFacts.join("\n- ")}`
+    ? `معلومات إضافية اتعرفت عليها من محادثات سابقة (استخدمها لو مناسبة، وما تكررهاش حرفيًا كل مرة):\n- ${memoryFacts.join("\n- ")}`
     : "";
 
-  return [base, motherContext, memorySection].filter(Boolean).join("\n\n");
+  return [base, audienceContext, memorySection].filter(Boolean).join("\n\n");
 }
