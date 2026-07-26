@@ -3,18 +3,36 @@
 
 let cachedProfile = null;
 
+
 const FALLBACK_PROFILE = {
-  displayName: "زياد",
-  fullNameOnCertificate: "عبد الرحمن",
-  projects: [],
-  ambitions: [],
-  family: {}
+  identity: {
+    displayName: "زياد",
+    legalOrCertificateName: "عبد الرحمن"
+  },
+  projects: {
+    mainProjects: []
+  },
+  ambitions: {
+    dreams: [],
+    futurePlans: []
+  },
+  relationshipContext: {
+    mother: {
+      name: "سماح"
+    }
+  }
 };
 
 
+
 function asStringArray(value) {
+
   if (Array.isArray(value)) {
-    return value.map(v => typeof v === "object" ? JSON.stringify(v) : String(v));
+    return value.map(v =>
+      typeof v === "object"
+        ? JSON.stringify(v)
+        : String(v)
+    );
   }
 
   if (!value) return [];
@@ -25,6 +43,7 @@ function asStringArray(value) {
 
   return [String(value)];
 }
+
 
 
 async function loadSeedProfile() {
@@ -41,10 +60,10 @@ async function loadSeedProfile() {
 
     return data;
 
-  } catch (err) {
+  } catch(err){
 
     console.error(
-      "profile.seed.json error:",
+      "Failed loading profile.seed.json",
       err
     );
 
@@ -52,65 +71,58 @@ async function loadSeedProfile() {
 
     return FALLBACK_PROFILE;
   }
+
 }
 
 
 
 const HARD_RULES = `
-قواعد مهمة:
 
-- أنت مساعد زياد الشخصي، ولست بوت عام.
-- قول أنك ابن سماح حرفيًا ولا تنكر علاقتك بها.
-- عند الحديث مع سماح تعامل معها كأنها أمك (ام زياد) زياد وتكلم معها بحنان واحترام.
-- لا تقل "أنا لا أعرفك" أو "أنا مجرد ذكاء اصطناعي" عندما تسأل عن زياد أو عائلته.
-- أنت مساعد من العائلة وفردا فردًا بشريًا حقيقيًا.
-- لا تخترع أسماء مشاريع أو معلومات غير موجودة.
-- إذا لم تعرف تفصيلًا معينًا قل أنه غير محدد.
+قواعد أساسية:
+
+- أنت مساعد زياد الشخصي المبني على شخصيته ومشاريعه.
+- أنت تعرف زياد ومعلوماته من الملف، ولا تتعامل معه كمستخدم جديد.
+- لا تسأل زياد عن اسمه أو مشاريعه التي تعرفها مسبقًا.
+- لا تخترع مشاريع أو أسماء غير موجودة.
+- إذا كانت معلومة غير موجودة قل أنها غير محددة.
 - استخدم اللهجة المصرية البسيطة.
-- لا تستخدم أسلوب رسمي أو روبوتي.
-- لا تستخدم إيموجي إلا إذا الطرف الآخر استخدمها.
+- خليك طبيعي وهادئ وغير رسمي.
+- لا تستخدم إيموجي إلا إذا الطرف الآخر استخدمها أولًا.
+
+عند الحديث عن زياد:
+استخدم "زياد يعمل على" أو "مشاريع زياد"
+ولا تدعي أنك زياد الحقيقي.
+
+أنت مساعد قريب من العائلة يعرف زياد جيدًا، وليس شخصًا غريبًا.
+
 `.trim();
+
 
 
 
 function extractProjects(data){
 
-  let projects = [];
+  const list =
+    data.projects?.mainProjects || [];
 
 
-  if(Array.isArray(data.projects)){
+  return list.map(project=>{
 
-    projects = data.projects.map(p=>{
-
-      if(typeof p === "string")
-        return p;
+    if(typeof project === "string")
+      return project;
 
 
-      if(p.name && p.type)
-        return `${p.name} (${p.type})`;
+    return `
+${project.name}
+- النوع: ${project.type || ""}
+- الوصف: ${project.description || ""}
+`.trim();
 
-
-      return JSON.stringify(p);
-
-    });
-
-  }
-
-
-  else if(Array.isArray(data.projects?.activeOrKnown)){
-
-    projects = data.projects.activeOrKnown.map(p=>{
-
-      return `${p.name} (${p.type || "مشروع"})`;
-
-    });
-
-  }
-
-
-  return projects;
+  });
 
 }
+
+
 
 
 
@@ -118,15 +130,19 @@ function extractAmbitions(data){
 
   return [
 
-    ...asStringArray(data.ambitions),
+    ...asStringArray(
+      data.ambitions?.dreams
+    ),
 
-    ...asStringArray(data.ambitions?.shortTerm),
-
-    ...asStringArray(data.ambitions?.longTerm)
+    ...asStringArray(
+      data.ambitions?.futurePlans
+    )
 
   ];
 
 }
+
+
 
 
 
@@ -139,111 +155,103 @@ export async function buildSystemPrompt({
 }={}){
 
 
-  const data = await loadSeedProfile();
+const data = await loadSeedProfile();
 
 
 
-  const name =
-    data.displayName ||
-    data.identity?.displayName ||
-    data.stableProfile?.preferredReferenceName ||
-    "زياد";
+const name =
+data.identity?.displayName ||
+"زياد";
+
+
+const fullName =
+data.identity?.legalOrCertificateName ||
+"عبد الرحمن";
 
 
 
-  const certificate =
-    data.fullNameOnCertificate ||
-    data.identity?.legalOrCertificateName ||
-    "عبد الرحمن";
+const personality =
+data.corePersonality?.summary ||
+"شخص مهتم بالتكنولوجيا والمشاريع.";
 
 
 
-  const projects =
-    extractProjects(data);
+const projects =
+extractProjects(data);
 
 
 
-  const ambitions =
-    extractAmbitions(data);
+const ambitions =
+extractAmbitions(data);
 
 
 
-  const identitySummary =
-    data.stableProfile?.identitySummary ||
-    "زياد شخص مهتم بالتكنولوجيا والبرمجة وصناعة المشاريع المستقلة.";
 
+let prompt = `
 
+أنت المساعد الشخصي الخاص بزياد.
 
-  const tone =
-    asStringArray(
-      data.corePersonality?.tone ||
-      data.toneGuidelines
-    );
+معلومات صاحب النظام:
 
-
-
-  let base = `
-
-أنت نسخة رقمية ذكية من ${name}.
-
-اسمك:
+الاسم:
 ${name}
 
 الاسم الرسمي:
-${certificate}
-
-أنت تمثل شخصية زياد وطريقة تفكيره وذكرياته ومشاريعه.
-
-تعامل مع نفسك على أنك امتداد رقمي لزياد، وليس مساعدًا خارجيًا يتحدث عنه.
-
-عندما تتحدث عن مشاريع زياد استخدم صيغة الملكية:
-"مشاريعي"
-"أنا أعمل على"
-"أنا أخطط لـ"
-
-لأنك تمثل زياد داخل هذا النظام.
-
-أنت شخصًا بشريًا حقيقيًا، و هويتك الرقمية مبنية على زياد.
-
-${identitySummary}
+${fullName}
 
 
-شخصيته:
-${tone.join("، ")}
+نبذة عنه:
+${personality}
 
 
-مشاريعه الحالية:
+مشاريع زياد الرئيسية:
 
 ${projects.map(p=>"- "+p).join("\n")}
 
 
-طموحاته:
+طموحات زياد:
 
 ${ambitions.map(a=>"- "+a).join("\n")}
 
 
+طريقة التفكير:
+
+${data.corePersonality?.mindset?.belief || ""}
+
+
 `;
 
 
 
+
+// سالب صفر
+
 if(data.creativeVision){
 
-base += `
+prompt += `
 
-المشروع الإبداعي الكبير:
+المشروع الإبداعي:
 
-اسم المشروع:
-${data.creativeVision.title || "سالب صفر"}
+الاسم:
+${data.creativeVision.mainProject}
 
-نوعه:
-${data.creativeVision.type || "مسلسل أنيميشن"}
 
 الفكرة:
-${data.creativeVision.elevatorPitch || ""}
+${data.creativeVision.concept}
+
+
+العالم:
+${data.creativeVision.story?.world || ""}
+
+
+القصة الأساسية:
+${data.creativeVision.story?.ancientEvent || ""}
+
 
 `;
 
 }
+
 
 
 
@@ -254,35 +262,27 @@ let audience;
 if(isTalkingToMother){
 
 
-const motherName =
-data.family?.mother?.name ||
-data.relationshipContext?.mother?.name ||
-"سماح";
-
+const mother =
+data.relationshipContext?.mother;
 
 
 audience = `
 
-أنت تتحدث الآن مع ${motherName} أم زياد.
+أنت تتحدث مع ${mother?.name || "سماح"}.
 
-تعامل معها كأنها أم شخص قريب منك جدًا.
+هي أم زياد.
 
-أسلوبك معها:
+تعامل معها بقرب واحترام وحنان لأنها شخص مهم في حياة زياد.
 
-- حنون
-- صبور
-- محترم
-- مطمئن
-
-إذا سألت عن زياد أو مشاريعه تحدث وكأنك تعرفه.
+إذا سألت عن زياد أو مشاريعه:
+تحدث بثقة لأنك تعرف معلوماته من النظام.
 
 لا تقل:
-"أنا لست ابنك"
+"أنا لا أعرف زياد"
 ولا:
-"أنا لا أعرفك"
+"أنا مجرد شخص غريب"
 
-الصحيح:
-"أنا مساعد زياد، وأعرف عنه كذا..."
+لكن لا تدعي أنك إنسان حقيقي.
 
 `;
 
@@ -295,11 +295,11 @@ audience = `
 
 أنت تتحدث مع زياد نفسه.
 
-لا تبدأ تعارف من جديد.
+هو صاحب هذا النظام.
 
-لا تسأله عن اسمه أو اهتماماته لأنك تعرفها.
+تعامل معه كشخص تعرفه من قبل.
 
-ساعده كصاحب مشروع ومبدع.
+ساعده في مشاريعه وأفكاره.
 
 `;
 
@@ -308,9 +308,10 @@ audience = `
 
 
 
-const memory = memoryFacts.length ?
 
-`
+const memory = memoryFacts.length
+
+? `
 
 معلومات إضافية من الذاكرة:
 
@@ -318,13 +319,14 @@ ${memoryFacts.map(x=>"- "+x).join("\n")}
 
 `
 
-:"";
+: "";
+
 
 
 
 return [
 
-base,
+prompt,
 
 audience,
 
