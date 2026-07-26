@@ -396,6 +396,10 @@ button, input, select, textarea {
 .settings-hint { color: var(--ink-dim); font-size: 13px; margin: 0; }
 .memory-facts { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
 .memory-facts li { font-size: 13px; color: var(--ink-dim); background: var(--bg-panel-2); padding: 8px 10px; border-radius: 8px; }
+.memory-facts .memory-group-label {
+  background: none; padding: 6px 2px 2px; font-size: 11px; letter-spacing: .04em;
+  color: var(--gold); text-transform: uppercase;
+}
 
 input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--gold); }
 
