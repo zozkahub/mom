@@ -1,18 +1,22 @@
 // netlify/functions/chat.js
-// Netlify proxy between the site and OpenRouter.
+// OpenRouter proxy for the site.
 //
-// Useful env vars:
-// - OPENROUTER_API_KEY
-// - OPENROUTER_REFERER
-// - OPENROUTER_APP_TITLE
-// - OPENROUTER_CEILING_MS
-// - OPENROUTER_MODEL_TIMEOUT_MS
-// - OPENROUTER_DISCOVERY_TIMEOUT_MS
-// - OPENROUTER_MAX_TOKENS
-// - OPENROUTER_TEMPERATURE
+// Env vars:
+// OPENROUTER_API_KEY          required
+// OPENROUTER_REFERER          optional but recommended
+// OPENROUTER_APP_TITLE        optional
+// OPENROUTER_REQUIRE_ZDR      optional: "true" to prefer ZDR models only
+// OPENROUTER_CEILING_MS       optional
+// OPENROUTER_MODEL_TIMEOUT_MS  optional
+// OPENROUTER_DISCOVERY_TIMEOUT_MS optional
+// OPENROUTER_MAX_TOKENS       optional
+// OPENROUTER_TEMPERATURE      optional
 
 const BASE_URL = "https://openrouter.ai";
 
+const ROUTER_MODEL = "openrouter/free";
+
+// Keep a few known free variants as fallback. Free availability changes frequently.
 const PREFERRED_FREE_MODELS = [
   "inclusionai/ling-3.0-flash:free",
   "poolside/laguna-s-2.1:free",
@@ -20,7 +24,6 @@ const PREFERRED_FREE_MODELS = [
   "meta-llama/llama-3.3-70b-instruct:free",
   "qwen/qwen-2.5-72b-instruct:free",
   "poolside/laguna-xs-2.1:free",
-  "openrouter/free",
 ];
 
 const JSON_HEADERS = {
@@ -41,7 +44,7 @@ const RESPONSE_HEADERS = {
 const CEILING_MS = Number(process.env.OPENROUTER_CEILING_MS || 8500);
 const PER_MODEL_TIMEOUT_MS = Number(process.env.OPENROUTER_MODEL_TIMEOUT_MS || 5000);
 const MODEL_DISCOVERY_TIMEOUT_MS = Number(process.env.OPENROUTER_DISCOVERY_TIMEOUT_MS || 2500);
-const MODEL_LIST_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const MODEL_LIST_CACHE_TTL_MS = 60 * 60 * 1000;
 
 let modelListCache = { list: null, fetchedAt: 0 };
 
@@ -70,6 +73,10 @@ function getReferer() {
 
 function getAppTitle() {
   return process.env.OPENROUTER_APP_TITLE || "Personal Assistant";
+}
+
+function getRequireZdr() {
+  return String(process.env.OPENROUTER_REQUIRE_ZDR || "").toLowerCase() === "true";
 }
 
 function normalizeContent(rawContent) {
@@ -116,7 +123,7 @@ async function readTextResponse(res) {
   }
 }
 
-async function getFreeModelChain() {
+async function discoverFreeModels() {
   const now = Date.now();
 
   if (modelListCache.list && now - modelListCache.fetchedAt < MODEL_LIST_CACHE_TTL_MS) {
@@ -126,7 +133,12 @@ async function getFreeModelChain() {
   const { signal, cancel } = withTimeout(MODEL_DISCOVERY_TIMEOUT_MS);
 
   try {
-    const res = await fetch(`${BASE_URL}/api/v1/models?max_price=0`, { signal });
+    const params = new URLSearchParams();
+    params.set("max_price", "0");
+    params.set("output_modalities", "text");
+    if (getRequireZdr()) params.set("zdr", "true");
+
+    const res = await fetch(`${BASE_URL}/api/v1/models?${params.toString()}`, { signal });
     cancel();
 
     if (!res.ok) {
@@ -134,48 +146,43 @@ async function getFreeModelChain() {
     }
 
     const data = await res.json();
-    const liveModels = Array.isArray(data?.data) ? data.data : [];
+    const models = Array.isArray(data?.data) ? data.data : [];
 
-    const freeIds = unique(
-      liveModels
+    const discovered = unique(
+      models
         .filter((m) => {
           const id = String(m?.id || "");
           const pricing = m?.pricing;
 
-          const isFreeByPricing =
+          const freeByPricing =
             pricing &&
             Number(pricing.prompt) === 0 &&
             Number(pricing.completion) === 0;
 
-          const isFreeBySlug = /:free$/.test(id) || id === "openrouter/free";
+          const freeBySlug = id.endsWith(":free") || id === ROUTER_MODEL;
 
-          return isFreeByPricing || isFreeBySlug;
+          return freeByPricing || freeBySlug;
         })
         .map((m) => String(m.id))
     );
 
     const ordered = unique([
-      ...PREFERRED_FREE_MODELS.filter((id) => freeIds.includes(id)),
-      ...freeIds.filter((id) => !PREFERRED_FREE_MODELS.includes(id)),
-    ]);
-
-    const finalChain = unique([
-      ...ordered,
-      "openrouter/free",
+      ROUTER_MODEL,
+      ...PREFERRED_FREE_MODELS.filter((id) => discovered.includes(id)),
+      ...discovered.filter((id) => !PREFERRED_FREE_MODELS.includes(id)),
     ]);
 
     modelListCache = {
-      list: finalChain.length ? finalChain : PREFERRED_FREE_MODELS,
+      list: ordered.length ? ordered : [ROUTER_MODEL, ...PREFERRED_FREE_MODELS],
       fetchedAt: now,
     };
 
-    console.log("[model-discovery] free models chain:", modelListCache.list.slice(0, 10));
-
+    console.log("[model-discovery] free chain:", modelListCache.list.slice(0, 10));
     return modelListCache.list;
   } catch (err) {
     cancel();
-    console.error("[model-discovery] falling back to static model chain:", err?.message || err);
-    return unique(PREFERRED_FREE_MODELS);
+    console.error("[model-discovery] fallback chain used:", err?.message || err);
+    return unique([ROUTER_MODEL, ...PREFERRED_FREE_MODELS]);
   }
 }
 
@@ -183,7 +190,7 @@ async function callModel(model, fullMessages, apiKey) {
   const { signal, cancel } = withTimeout(PER_MODEL_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${BASE_URL}/api/v1/chat/completions`, {
+    const res = await fetch(`${BASE_URL}/api/v1/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -202,13 +209,13 @@ async function callModel(model, fullMessages, apiKey) {
 
     cancel();
 
-    const rawText = await readTextResponse(response);
+    const rawText = await readTextResponse(res);
 
-    if (!response.ok) {
+    if (!res.ok) {
       return {
         ok: false,
-        status: response.status,
-        detail: extractErrorDetailFromResponseText(rawText, response.status),
+        status: res.status,
+        detail: extractErrorDetailFromResponseText(rawText, res.status),
       };
     }
 
@@ -223,18 +230,14 @@ async function callModel(model, fullMessages, apiKey) {
     const reply = normalizeContent(msg?.content);
 
     if (!reply) {
-      const refusal = msg?.refusal;
       return {
         ok: false,
         status: 200,
-        detail: refusal ? `model refusal: ${refusal}` : "empty reply",
+        detail: msg?.refusal ? `model refusal: ${msg.refusal}` : "empty reply",
       };
     }
 
-    return {
-      ok: true,
-      text: reply,
-    };
+    return { ok: true, text: reply };
   } catch (err) {
     cancel();
 
@@ -257,26 +260,26 @@ async function callModel(model, fullMessages, apiKey) {
 function diagnoseCommonIssue(attempts) {
   if (!attempts.length) return null;
 
-  const details = attempts.map((a) => String(a.detail || "")).join(" | ");
+  const joined = attempts.map((a) => String(a.detail || "")).join(" | ");
 
   if (attempts.some((a) => a.status === 401 || a.status === 403)) {
-    return "OpenRouter رفض الـ API key (401/403). راجع OPENROUTER_API_KEY في Netlify وتأكد إنه صحيح 100%.";
+    return "OpenRouter رفض الـ API key (401/403). راجع OPENROUTER_API_KEY في Netlify.";
   }
 
   if (attempts.every((a) => a.status === 429)) {
-    return "كل المحاولات رجعت 429 (rate limit). غالبًا وصلت لسقف الموديلات المجانية في OpenRouter.";
+    return "كل المحاولات رجعت 429 (rate limit). غالبًا وصلت لسقف الطلبات المجانية.";
   }
 
-  if (/No endpoints found matching your data policy/i.test(details) || /data policy/i.test(details)) {
-    return "OpenRouter رفض الموديلات الحرة بسبب إعدادات data policy/privacy في الحساب. راجع إعدادات الخصوصية للموديلات المجانية.";
+  if (/No endpoints found matching your data policy/i.test(joined) || /data policy/i.test(joined)) {
+    return "OpenRouter منع routing بسبب data policy / privacy settings. راجع إعدادات الخصوصية للموديلات المجانية أو فعّل ZDR إذا كنت تحتاجه.";
   }
 
   if (attempts.every((a) => a.status === 404)) {
-    return "كل الموديلات رجعت 404. غالبًا أسماء الموديلات قديمة أو اتشالت من OpenRouter.";
+    return "كل الموديلات رجعت 404. غالبًا أسماء الموديلات القديمة لم تعد متاحة.";
   }
 
   if (attempts.every((a) => a.status === 0 && /timeout/i.test(String(a.detail || "")))) {
-    return "كل المحاولات انتهت بمهلة زمنية. قلل عدد المحاولات أو زوّد مهلة كل موديل قليلًا.";
+    return "كل المحاولات انتهت بمهلة زمنية. قلل عدد المحاولات أو زوّد المهلة قليلاً.";
   }
 
   return null;
@@ -335,7 +338,7 @@ exports.handler = async (event) => {
     ? [{ role: "system", content: systemPrompt }, ...messages]
     : messages;
 
-  const chain = await getFreeModelChain();
+  const chain = await discoverFreeModels();
   const attempts = [];
   const startedAt = Date.now();
 
@@ -368,17 +371,6 @@ exports.handler = async (event) => {
     });
 
     console.error(`[chat] failed: ${model}`, result);
-
-    if (result.status === 401 || result.status === 403) {
-      return {
-        statusCode: 502,
-        headers: RESPONSE_HEADERS,
-        body: JSON.stringify({
-          error: "API key rejected by OpenRouter (401/403).",
-          attempts,
-        }),
-      };
-    }
   }
 
   return {
@@ -387,6 +379,7 @@ exports.handler = async (event) => {
     body: JSON.stringify({
       error: diagnoseCommonIssue(attempts) || "All models failed to respond.",
       attempts,
+      chainTried: chain,
     }),
   };
 };
