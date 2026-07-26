@@ -1,0 +1,9 @@
+{
+  "name": "ziad-personal-assistant",
+  "version": "1.0.0",
+  "private": true,
+  "description": "موقع مساعد شخصي بذاكرة دائمة وتبديل نماذج تلقائي",
+  "engines": {
+    "node": ">=18"
+  }
+}
