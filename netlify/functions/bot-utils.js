@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { getStore } = require("@netlify/blobs");
+const { getStore, connectLambda } = require("@netlify/blobs");
 
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 const CORS_HEADERS = {
@@ -47,7 +47,9 @@ function decrypt(payload) {
   ]).toString("utf8");
 }
 
-function getBotsStore() {
+function getBotsStore(event) {
+  // Netlify Lambda functions need their request context connected before Blobs is used.
+  if (event?.blobs) connectLambda(event);
   return getStore("personal-ai-bots");
 }
 

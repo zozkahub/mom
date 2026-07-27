@@ -18,7 +18,17 @@ exports.handler = async (event) => {
     return json(400, { error: "Bad JSON" });
   }
 
-  const bot = await getBotsStore().get(payload.botId, { type: "json" });
+  let bot;
+  try {
+    bot = await getBotsStore(event).get(payload.botId, { type: "json" });
+  } catch (err) {
+    console.error("bot-chat blob read failed", err);
+    return json(500, {
+      error: "فشل الاتصال ببيانات النموذج.",
+      detail: err?.message || "راجع إعدادات Netlify Blobs.",
+      code: "BLOBS_READ_FAILED",
+    });
+  }
   if (!bot) return json(404, { error: "النموذج ده مش موجود." });
 
   const messages = Array.isArray(payload.messages)

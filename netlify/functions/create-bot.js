@@ -55,7 +55,16 @@ exports.handler = async (event) => {
     return json(400, { error: "اكتب Base URL للـ API المتوافق." });
   }
 
-  await getBotsStore().setJSON(id, bot);
+  try {
+    await getBotsStore(event).setJSON(id, bot);
+  } catch (err) {
+    console.error("create-bot blob write failed", err);
+    return json(500, {
+      error: "فشل حفظ النموذج داخل Netlify Blobs.",
+      detail: err?.message || "تأكد أن Netlify مربوط بالموقع وأن Deploy يضم Functions وBlobs.",
+      code: "BLOBS_WRITE_FAILED",
+    });
+  }
 
   return json(200, {
     ok: true,

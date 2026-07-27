@@ -57,6 +57,27 @@ function closeSidebar() {
   document.body.classList.remove("sidebar-open");
 }
 
+async function readApiResponse(res) {
+  const raw = await res.text();
+  let data = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = {};
+  }
+  if (!res.ok) {
+    const serverMessage = data.error || data.detail;
+    if (serverMessage) {
+      throw new Error(`${serverMessage} (HTTP ${res.status})`);
+    }
+    if (res.status === 404) {
+      throw new Error("مسار الـ API غير موجود. اعمل Redeploy للموقع وتأكد أن netlify.toml وFunctions اترفعوا.");
+    }
+    throw new Error(`السيرفر رجّع خطأ HTTP ${res.status}. راجع إعدادات Netlify ثم حاول تاني.`);
+  }
+  return data;
+}
+
 // ---------- البوابة الرئيسية ----------
 const bootBotId = new URLSearchParams(location.search).get("bot");
 const isPublicRoute = Boolean(bootBotId);
@@ -81,8 +102,8 @@ $("#admin-form").addEventListener("submit", async (e) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password }),
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "فشل دخول الأدمن");
+    const data = await readApiResponse(res);
+    if (!data.ok) throw new Error("السيرفر لم يؤكد دخول الأدمن.");
     localStorage.setItem("ziad-admin-ok", "1");
     isMotherMode = false;
     authMode = "login";
@@ -143,8 +164,8 @@ $("#bot-builder-form").addEventListener("submit", async (e) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "حصلت مشكلة أثناء إنشاء النموذج.");
+    const data = await readApiResponse(res);
+    if (!data.bot?.id) throw new Error("السيرفر أنشأ ردًا غير مكتمل، جرّب تاني.");
     const link = `${location.origin}${location.pathname}?bot=${encodeURIComponent(data.bot.id)}`;
     $("#generated-link").value = link;
     $("#generated-link-panel").hidden = false;
@@ -436,7 +457,7 @@ function renderPublicMessages() {
 async function loadPublicBot(id) {
   try {
     const res = await fetch(`/api/get-bot?id=${encodeURIComponent(id)}`);
-    const data = await res.json().catch(() => ({}));
+    const data = await readApiResponse(res);
     if (!res.ok) throw new Error(data.error || "الرابط ده غير صالح أو النموذج اتحذف.");
     currentPublicBot = data.bot;
     $("#public-bot-title").textContent = currentPublicBot.publicTitle || `نموذج ${currentPublicBot.ownerName}`;
@@ -494,8 +515,7 @@ $("#public-composer").addEventListener("submit", async (e) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ botId: currentPublicBot.id, visitor: publicVisitor, messages, memory }),
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || data.error || "النموذج مقدرش يرد دلوقتي.");
+    const data = await readApiResponse(res);
     publicMessages.push({ role: "assistant", content: data.reply || "مفيش رد صالح من النموذج." });
     savePublicMessages();
   } catch (err) {
