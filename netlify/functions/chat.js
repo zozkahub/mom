@@ -286,11 +286,18 @@ function diagnoseCommonIssue(attempts) {
   const joined = attempts.map((a) => String(a.detail || "")).join(" | ");
 
   if (attempts.some((a) => a.status === 401 || a.status === 403)) {
-    return "OpenRouter رفض الـ API key (401/403). راجع OPENROUTER_API_KEY في Netlify.";
+    if (/referer|origin|site|domain/i.test(joined)) {
+      return "OpenRouter رفض الطلب بسبب domain/referer restriction. لو المفتاح مربوط بدومين قديم، ضيف دومين Netlify الجديد أو استخدم مفتاح جديد.";
+    }
+    return "OpenRouter رفض الـ API key (401/403). راجع OPENROUTER_API_KEY في Netlify، خصوصًا إن الـ deploy الجديد على حساب Netlify مختلف.";
   }
 
   if (attempts.every((a) => a.status === 429)) {
     return "كل المحاولات رجعت 429 (rate limit). غالبًا وصلت لسقف الطلبات المجانية.";
+  }
+
+  if (attempts.some((a) => a.status === 402 || /credit|payment|balance|quota/i.test(String(a.detail || "")))) {
+    return "OpenRouter محتاج credits أو الرصيد/الكوتا خلصت. جرّب مفتاح جديد عليه رصيد أو موديلات مجانية متاحة للحساب.";
   }
 
   if (/No endpoints found matching your data policy/i.test(joined) || /data policy/i.test(joined)) {
@@ -306,6 +313,11 @@ function diagnoseCommonIssue(attempts) {
   }
 
   return null;
+}
+
+function publicAttemptDetail(attempts) {
+  const first = attempts.find((a) => a.detail)?.detail;
+  return first ? String(first).slice(0, 500) : "";
 }
 
 exports.handler = async (event) => {
@@ -392,7 +404,7 @@ exports.handler = async (event) => {
     statusCode: 502,
     headers: RESPONSE_HEADERS,
     body: JSON.stringify({
-      error: diagnoseCommonIssue(attempts) || "All models failed to respond.",
+      error: diagnoseCommonIssue(attempts) || `OpenRouter لم يرجع رد صالح. آخر سبب: ${publicAttemptDetail(attempts) || "غير معروف"}`,
       attempts,
       chainTried: models,
     }),

@@ -168,7 +168,9 @@ export async function sendMessage(uid, chatId, { text, isMotherMode, history, re
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || "حصل خطأ في الرد");
+    const firstAttempt = Array.isArray(err.attempts) ? err.attempts[0] : null;
+    const detail = firstAttempt?.detail ? `\n\nتفاصيل تقنية: ${firstAttempt.detail}` : "";
+    throw new Error(`${err.error || "حصل خطأ في الرد"}${detail}`);
   }
 
   const { reply, modelUsed } = await res.json();

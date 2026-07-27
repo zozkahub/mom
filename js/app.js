@@ -19,6 +19,8 @@ let currentChatId = null;
 let unsubChats = null;
 let unsubMessages = null;
 let messagesCache = [];
+let isCreatingChat = false;
+let isSendingMessage = false;
 
 const savedStyle = localStorage.getItem("ziad-response-style");
 if (savedStyle && $("#setting-style")) {
@@ -144,8 +146,23 @@ function renderChatList(chats) {
 $("#chat-search").addEventListener("input", () => renderChatList(allChats));
 
 $("#new-chat-btn").addEventListener("click", async () => {
-  const id = await createChat(currentUser.uid, { isMotherMode });
-  openChat(id);
+  if (isCreatingChat) return;
+
+  if (currentChatId && messagesCache.length === 0) {
+    $("#sidebar").classList.remove("open");
+    input.focus();
+    return;
+  }
+
+  isCreatingChat = true;
+  $("#new-chat-btn").disabled = true;
+  try {
+    const id = await createChat(currentUser.uid, { isMotherMode });
+    openChat(id);
+  } finally {
+    isCreatingChat = false;
+    $("#new-chat-btn").disabled = false;
+  }
   $("#sidebar").classList.remove("open");
 });
 
@@ -167,7 +184,8 @@ function renderMessages(msgs) {
     `<div class="empty-state" id="empty-state" ${msgs.length ? "hidden" : ""}><p>ابدئي بأي كلمة، أنا موجود.</p></div>` +
     msgs
       .map((m) => `<div class="msg msg--${m.role}" dir="auto">${renderRichText(m.text)}</div>`)
-      .join("");
+      .join("") +
+    (isSendingMessage ? `<div class="msg msg--assistant msg--typing" aria-label="المساعد يكتب"><span></span><span></span><span></span></div>` : "");
   $("#messages").scrollTop = $("#messages").scrollHeight;
 }
 
@@ -235,7 +253,9 @@ $("#composer").addEventListener("submit", async (e) => {
   input.value = "";
   input.style.height = "auto";
   $("#send-btn").disabled = true;
-  $("#typing-indicator").hidden = false;
+  isSendingMessage = true;
+  $("#typing-indicator").hidden = true;
+  renderMessages(messagesCache);
 
   const history = messagesCache.slice(-16).map((m) => ({ role: m.role, content: m.text }));
 
@@ -249,8 +269,9 @@ $("#composer").addEventListener("submit", async (e) => {
   } catch (err) {
     alert(err.message);
   } finally {
-    $("#typing-indicator").hidden = true;
+    isSendingMessage = false;
     $("#send-btn").disabled = false;
+    renderMessages(messagesCache);
   }
 });
 
