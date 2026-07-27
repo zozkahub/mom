@@ -468,31 +468,13 @@ const publicTourSteps = [
   },
 ];
 
-function positionPublicTour() {
-  if (!publicTourActive) return;
-  const step = publicTourSteps[publicTourIndex];
-  const target = document.querySelector(step.target);
-  if (!target) return;
-  const rect = target.getBoundingClientRect();
-  const spotlight = $("#public-tour-spotlight");
-  const card = $("#public-tour-card");
-  const gap = 10;
-  spotlight.style.left = `${Math.max(8, rect.left - gap)}px`;
-  spotlight.style.top = `${Math.max(8, rect.top - gap)}px`;
-  spotlight.style.width = `${Math.min(window.innerWidth - 16, rect.width + gap * 2)}px`;
-  spotlight.style.height = `${rect.height + gap * 2}px`;
-
-  const cardWidth = Math.min(320, window.innerWidth - 32);
-  const cardLeft = Math.max(16, Math.min(window.innerWidth - cardWidth - 16, rect.left));
-  const belowTop = rect.bottom + 22;
-  const cardTop = belowTop + 190 < window.innerHeight ? belowTop : Math.max(16, rect.top - 205);
-  card.style.width = `${cardWidth}px`;
-  card.style.left = `${cardLeft}px`;
-  card.style.top = `${cardTop}px`;
-}
-
 function renderPublicTourStep() {
   const step = publicTourSteps[publicTourIndex];
+  document.querySelectorAll(".public-tour-focus").forEach((element) => element.classList.remove("public-tour-focus"));
+  const target = document.querySelector(step.target);
+  if (!target) return;
+  const focusTarget = publicTourIndex === 0 ? target.closest(".public-model-picker") || target : target;
+  focusTarget.classList.add("public-tour-focus");
   $("#public-tour-step").textContent = `${publicTourIndex + 1} / ${publicTourSteps.length}`;
   $("#public-tour-title").textContent = step.title;
   $("#public-tour-text").textContent = step.text;
@@ -501,9 +483,9 @@ function renderPublicTourStep() {
     $("#public-model-menu").hidden = false;
   } else {
     $("#public-model-menu").hidden = true;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
   }
   updatePublicModeUI();
-  requestAnimationFrame(positionPublicTour);
 }
 
 function finishPublicTour() {
@@ -511,12 +493,13 @@ function finishPublicTour() {
   $("#public-tour").hidden = true;
   $("#public-tour").setAttribute("aria-hidden", "true");
   $("#public-model-menu").hidden = true;
-  if (currentPublicBot) localStorage.setItem(`public-tour:${currentPublicBot.id}`, "1");
+  document.querySelectorAll(".public-tour-focus").forEach((element) => element.classList.remove("public-tour-focus"));
+  if (currentPublicBot) localStorage.setItem(`public-tour:v2:${currentPublicBot.id}`, "1");
   updatePublicModeUI();
 }
 
 function startPublicTour() {
-  if (!currentPublicBot || localStorage.getItem(`public-tour:${currentPublicBot.id}`) === "1") return;
+  if (!currentPublicBot || localStorage.getItem(`public-tour:v2:${currentPublicBot.id}`) === "1") return;
   publicTourIndex = 0;
   publicTourActive = true;
   $("#public-tour").hidden = false;
@@ -533,8 +516,6 @@ $("#public-tour-next").addEventListener("click", () => {
 });
 $("#public-tour-skip").addEventListener("click", finishPublicTour);
 $(".public-tour-backdrop").addEventListener("click", finishPublicTour);
-window.addEventListener("resize", positionPublicTour);
-window.addEventListener("scroll", positionPublicTour, true);
 
 $("#public-model-toggle").addEventListener("click", (event) => {
   event.stopPropagation();
