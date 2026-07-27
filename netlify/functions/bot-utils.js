@@ -69,6 +69,7 @@ function publicBot(bot) {
     projects: bot.projects,
     extra: bot.extra,
     provider: bot.provider,
+    mode: bot.mode || "pro",
     model: bot.model,
     createdAt: bot.createdAt,
   };
@@ -240,8 +241,10 @@ function getOpenRouterModels(selectedModel) {
   return [...new Set([selectedModel, ...configured, ...DEFAULT_OPENROUTER_FALLBACKS].filter(Boolean))].slice(0, 3);
 }
 
-async function callOpenRouter({ apiKey, model, messages, systemPrompt }) {
-  const { signal, cancel } = withTimeout(Number(process.env.PERSONAL_MODEL_TIMEOUT_MS || 8500));
+async function callOpenRouter({ apiKey, model, messages, systemPrompt, mode = "pro" }) {
+  const isQuick = mode === "quick";
+  const timeoutMs = Number(process.env.PERSONAL_MODEL_TIMEOUT_MS || (isQuick ? 5500 : 8500));
+  const { signal, cancel } = withTimeout(timeoutMs);
   try {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -257,8 +260,8 @@ async function callOpenRouter({ apiKey, model, messages, systemPrompt }) {
           ? { models: getOpenRouterModels(model) }
           : { model: getOpenRouterModels(model)[0] || "openai/gpt-oss-20b:free" }),
         messages: [{ role: "system", content: systemPrompt }, ...messages],
-        temperature: 0.65,
-        max_tokens: 900,
+        temperature: isQuick ? 0.55 : 0.65,
+        max_tokens: isQuick ? 600 : 900,
       }),
     });
     const data = await readModelResponse(res, "OpenRouter");
@@ -266,17 +269,19 @@ async function callOpenRouter({ apiKey, model, messages, systemPrompt }) {
     if (!reply) throw new Error("OpenRouter رجّع ردًا فارغًا. راجع اسم الموديل أو جرّب موديلًا أسرع.");
     return reply;
   } catch (err) {
-    if (err?.name === "AbortError") throw new Error("OpenRouter اتأخر أكثر من 8.5 ثواني. اختار موديلًا أسرع أو راجع حالة الموديل.");
+    if (err?.name === "AbortError") throw new Error(`OpenRouter اتأخر أكثر من ${timeoutMs / 1000} ثواني. اختار موديلًا أسرع أو استخدم وضع Pro.`);
     throw err;
   } finally {
     cancel();
   }
 }
 
-async function callOpenAICompatible({ apiKey, baseUrl, model, messages, systemPrompt }) {
+async function callOpenAICompatible({ apiKey, baseUrl, model, messages, systemPrompt, mode = "pro" }) {
   const normalizedBaseUrl = String(baseUrl || "").replace(/\/$/, "");
   const url = normalizedBaseUrl.endsWith("/chat/completions") ? normalizedBaseUrl : `${normalizedBaseUrl}/chat/completions`;
-  const { signal, cancel } = withTimeout(Number(process.env.PERSONAL_MODEL_TIMEOUT_MS || 8500));
+  const isQuick = mode === "quick";
+  const timeoutMs = Number(process.env.PERSONAL_MODEL_TIMEOUT_MS || (isQuick ? 5500 : 8500));
+  const { signal, cancel } = withTimeout(timeoutMs);
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -288,8 +293,8 @@ async function callOpenAICompatible({ apiKey, baseUrl, model, messages, systemPr
       body: JSON.stringify({
         model,
         messages: [{ role: "system", content: systemPrompt }, ...messages],
-        temperature: 0.65,
-        max_tokens: 900,
+        temperature: isQuick ? 0.55 : 0.65,
+        max_tokens: isQuick ? 600 : 900,
       }),
     });
     const data = await readModelResponse(res, "API المخصص");
@@ -297,17 +302,19 @@ async function callOpenAICompatible({ apiKey, baseUrl, model, messages, systemPr
     if (!reply) throw new Error("الـ API رجّع ردًا فارغًا أو بصيغة غير مدعومة.");
     return reply;
   } catch (err) {
-    if (err?.name === "AbortError") throw new Error("الـ API المخصص اتأخر أكثر من 8.5 ثواني.");
+    if (err?.name === "AbortError") throw new Error(`الـ API المخصص اتأخر أكثر من ${timeoutMs / 1000} ثواني.`);
     throw err;
   } finally {
     cancel();
   }
 }
 
-async function callGemini({ apiKey, model, messages, systemPrompt }) {
+async function callGemini({ apiKey, model, messages, systemPrompt, mode = "pro" }) {
   const prompt = [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${messages.map((m) => `${m.role}: ${m.content}`).join("\n")}` }] }];
   const targetModel = model || "gemini-2.0-flash";
-  const { signal, cancel } = withTimeout(Number(process.env.PERSONAL_MODEL_TIMEOUT_MS || 8500));
+  const isQuick = mode === "quick";
+  const timeoutMs = Number(process.env.PERSONAL_MODEL_TIMEOUT_MS || (isQuick ? 5500 : 8500));
+  const { signal, cancel } = withTimeout(timeoutMs);
   try {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`, {
       method: "POST",
@@ -320,16 +327,16 @@ async function callGemini({ apiKey, model, messages, systemPrompt }) {
     if (!reply) throw new Error("Gemini رجّع ردًا فارغًا أو متوقفًا.");
     return reply;
   } catch (err) {
-    if (err?.name === "AbortError") throw new Error("Gemini اتأخر أكثر من 8.5 ثواني.");
+    if (err?.name === "AbortError") throw new Error(`Gemini اتأخر أكثر من ${timeoutMs / 1000} ثواني.`);
     throw err;
   } finally {
     cancel();
   }
 }
 
-async function callBotModel({ bot, apiKey, messages, systemPrompt }) {
+async function callBotModel({ bot, apiKey, messages, systemPrompt, mode = "pro" }) {
   if (bot.provider === "gemini") {
-    return callGemini({ apiKey, model: bot.model, messages, systemPrompt });
+    return callGemini({ apiKey, model: bot.model, messages, systemPrompt, mode });
   }
   if (bot.provider === "openai" || bot.provider === "custom") {
     return callOpenAICompatible({
@@ -338,9 +345,10 @@ async function callBotModel({ bot, apiKey, messages, systemPrompt }) {
       model: bot.model || "gpt-4o-mini",
       messages,
       systemPrompt,
+      mode,
     });
   }
-  return callOpenRouter({ apiKey, model: bot.model, messages, systemPrompt });
+  return callOpenRouter({ apiKey, model: bot.model, messages, systemPrompt, mode });
 }
 
 module.exports = {

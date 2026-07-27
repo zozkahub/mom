@@ -33,16 +33,18 @@ exports.handler = async (event) => {
   }
   if (!bot) return json(404, { error: "النموذج ده مش موجود." });
 
+  const messageLimit = bot.mode === "quick" ? 12 : 36;
+  const memoryLimit = bot.mode === "quick" ? 8 : 24;
   const messages = Array.isArray(payload.messages)
     ? payload.messages
       .filter((message) => message && (message.role === "user" || message.role === "assistant") && typeof message.content === "string")
-      .slice(-36)
+      .slice(-messageLimit)
       .map((message) => ({ role: message.role, content: message.content.slice(0, 6000) }))
     : [];
   if (!messages.length) return json(400, { error: "لازم تبعت رسالة." });
 
   const memory = Array.isArray(payload.memory)
-    ? payload.memory.filter((item) => typeof item === "string").slice(-24).map((item) => item.slice(0, 1000))
+    ? payload.memory.filter((item) => typeof item === "string").slice(-memoryLimit).map((item) => item.slice(0, 1000))
     : [];
   const visitor = {
     name: String(payload.visitor?.name || "").trim().slice(0, 120),
@@ -71,7 +73,7 @@ exports.handler = async (event) => {
   const systemPrompt = buildBotPrompt(bot, visitor, memory, conversation);
 
   try {
-    const reply = await callBotModel({ bot, apiKey, messages, systemPrompt });
+    const reply = await callBotModel({ bot, apiKey, messages, systemPrompt, mode: bot.mode || "pro" });
     return json(200, { reply, modelUsed: bot.model || bot.provider });
   } catch (err) {
     const detail = err?.message || "Unknown provider error";

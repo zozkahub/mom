@@ -19,11 +19,13 @@ exports.handler = async (event) => {
   const ownerName = pick(payload, "ownerName", 120);
   const apiKey = pick(payload, "apiKey", 3000);
   const provider = pick(payload, "provider", 40) || "openrouter";
+  const mode = pick(payload, "mode", 20) || "pro";
   const allowedProviders = new Set(["openrouter", "gemini", "openai", "custom"]);
 
   if (!ownerName) return json(400, { error: "اكتب اسم صاحب النموذج." });
   if (!apiKey) return json(400, { error: "لازم تضيف API key للنموذج." });
   if (!allowedProviders.has(provider)) return json(400, { error: "مزود النموذج غير مدعوم." });
+  if (!new Set(["quick", "pro"]).has(mode)) return json(400, { error: "وضع الذكاء غير مدعوم." });
 
   let encryptedApiKey;
   try {
@@ -44,6 +46,7 @@ exports.handler = async (event) => {
     projects: pick(payload, "projects"),
     extra: pick(payload, "extra"),
     provider,
+    mode,
     model: pick(payload, "model", 160),
     baseUrl: pick(payload, "baseUrl", 300),
     encryptedApiKey,

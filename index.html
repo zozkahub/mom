@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>مساعد زياد</title>
+<title>مساعدك الشخصي</title>
+<link rel="icon" type="image/png" href="/assets/site-logo.png" />
+<link rel="apple-touch-icon" href="/assets/site-logo.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Arabic:wght@500;600;700&family=Tajawal:wght@300;400;500;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/css/style.css" />
@@ -63,9 +65,17 @@
       <label>المشاريع والأعمال
         <textarea id="bot-projects" rows="4" placeholder="اكتب المشاريع، القنوات، التطبيقات، الأعمال السابقة والحالية..."></textarea>
       </label>
-      <label>أي حاجة تانية في الدنيا
-        <textarea id="bot-extra" rows="4" placeholder="طريقة الكلام، العلاقات، الذكريات المهمة، الحاجات اللي لازم ماينسهاش..."></textarea>
-      </label>
+      <fieldset class="mode-picker">
+        <legend>وضع الذكاء</legend>
+        <label class="mode-option">
+          <input type="radio" name="bot-mode" value="quick" />
+          <span><strong>سريع</strong><small>رد أسرع وسياق مختصر</small></span>
+        </label>
+        <label class="mode-option mode-option--selected">
+          <input type="radio" name="bot-mode" value="pro" checked />
+          <span><strong>Pro</strong><small>ذاكرة أوسع وردود أذكى</small></span>
+        </label>
+      </fieldset>
 
       <div class="provider-grid">
         <label>مزود النموذج
@@ -76,18 +86,27 @@
             <option value="custom">OpenAI Compatible API</option>
           </select>
         </label>
-        <label>اسم الموديل
-          <input id="bot-model" placeholder="openai/gpt-oss-20b:free" />
-        </label>
       </div>
-      <label id="bot-base-url-row" hidden>Base URL للـ API المتوافق
-        <input id="bot-base-url" placeholder="https://api.example.com/v1" />
-      </label>
       <label>API Key
         <input id="bot-api-key" required placeholder="sk-... أو مفتاح المزود" />
       </label>
 
       <div id="provider-help" class="provider-help"></div>
+      <details id="advanced-bot-settings" class="advanced-settings">
+        <summary>إعدادات متقدمة</summary>
+        <div class="advanced-settings__body">
+          <label>معلومات إضافية
+            <textarea id="bot-extra" rows="4" placeholder="طريقة الكلام، العلاقات، الذكريات المهمة، الحاجات اللي لازم ماينسهاش..."></textarea>
+          </label>
+          <label>اسم الموديل
+            <input id="bot-model" placeholder="openai/gpt-oss-20b:free" />
+          </label>
+          <label id="bot-base-url-row" hidden>Base URL للـ API المتوافق
+            <input id="bot-base-url" placeholder="https://api.example.com/v1" />
+          </label>
+        </div>
+      </details>
+
       <button type="submit" class="btn btn--primary btn--block" id="create-bot-submit">إنشاء الرابط</button>
       <p id="builder-error" class="auth-error" hidden></p>
     </form>

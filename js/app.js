@@ -130,6 +130,7 @@ function updateProviderHelp() {
   const provider = $("#bot-provider").value;
   $("#provider-help").textContent = providerHelp[provider] || "";
   $("#bot-base-url-row").hidden = provider !== "custom";
+  if (provider === "custom") $("#advanced-bot-settings").open = true;
   $("#bot-model").placeholder = provider === "gemini" ? "gemini-2.0-flash" : provider === "openai" ? "gpt-4o-mini" : provider === "custom" ? "اسم الموديل عند مزودك" : "openai/gpt-oss-20b:free";
 }
 
@@ -152,6 +153,7 @@ $("#bot-builder-form").addEventListener("submit", async (e) => {
     favoriteActivities: $("#bot-favorite-activities").value.trim(),
     projects: $("#bot-projects").value.trim(),
     extra: $("#bot-extra").value.trim(),
+    mode: document.querySelector('input[name="bot-mode"]:checked')?.value || "pro",
     provider: $("#bot-provider").value,
     model: $("#bot-model").value.trim(),
     baseUrl: $("#bot-base-url").value.trim(),
@@ -522,7 +524,8 @@ $("#public-composer").addEventListener("submit", async (e) => {
   $("#public-send-btn").disabled = true;
   renderPublicMessages();
 
-  const messages = publicMessages.slice(-36);
+  const contextLimit = currentPublicBot.mode === "quick" ? 12 : 36;
+  const messages = publicMessages.slice(-contextLimit);
   const memory = [];
   let memoryBudget = 12000;
   for (const message of publicMessages.slice(0, -36).concat(publicMessages.slice(-36, -1))) {
