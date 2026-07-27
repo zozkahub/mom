@@ -6,3 +6,23 @@
   from = "/api/chat"
   to = "/.netlify/functions/chat"
   status = 200
+
+[[redirects]]
+  from = "/api/admin-login"
+  to = "/.netlify/functions/admin-login"
+  status = 200
+
+[[redirects]]
+  from = "/api/create-bot"
+  to = "/.netlify/functions/create-bot"
+  status = 200
+
+[[redirects]]
+  from = "/api/get-bot"
+  to = "/.netlify/functions/get-bot"
+  status = 200
+
+[[redirects]]
+  from = "/api/bot-chat"
+  to = "/.netlify/functions/bot-chat"
+  status = 200

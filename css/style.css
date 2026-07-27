@@ -241,6 +241,103 @@ button, input, select, textarea {
   background: rgba(237,231,221,0.1);
 }
 
+/* ================= منشئ النماذج والرابط العام ================= */
+#view-builder, #view-public-bot {
+  overflow-y: auto;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 28px 18px 48px;
+  background: var(--bg);
+}
+.builder-shell, .public-bot-shell {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  animation: rise .55s cubic-bezier(.19,1,.22,1) both;
+}
+.builder-header { margin: 42px 0 26px; }
+.builder-header h1 {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 6vw, 42px);
+  line-height: 1.25;
+  margin: 0 0 12px;
+}
+.builder-header p:not(.eyebrow) { color: var(--ink-dim); line-height: 1.8; margin: 0; }
+.builder-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--bg-panel);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+.builder-form label, .visitor-gate label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--ink-dim);
+  font-size: 13px;
+}
+.builder-form input, .builder-form textarea, .builder-form select,
+.visitor-gate input, .generated-link input {
+  width: 100%;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  padding: 12px 13px;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.builder-form textarea { resize: vertical; min-height: 80px; }
+.builder-form input:focus, .builder-form textarea:focus, .builder-form select:focus,
+.visitor-gate input:focus, .generated-link input:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
+.provider-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.provider-help {
+  color: var(--ink-dim);
+  font-size: 13px;
+  line-height: 1.75;
+  padding: 12px 14px;
+  border-inline-start: 3px solid var(--teal);
+  background: rgba(139,201,193,.07);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.inline-panel {
+  margin-top: 18px;
+  padding: 14px;
+  background: var(--bg-panel);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: var(--radius);
+  text-align: start;
+}
+.inline-panel label { display: block; color: var(--ink-dim); font-size: 13px; }
+.inline-panel input { width: 100%; margin: 7px 0 12px; padding: 11px 12px; border: 1px solid rgba(255,255,255,.1); border-radius: var(--radius-sm); background: var(--bg-panel-2); }
+.generated-link {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid rgba(139,201,193,.3);
+  border-radius: var(--radius);
+  background: rgba(139,201,193,.08);
+  animation: rise .4s ease both;
+}
+.generated-link h2 { margin: 0 0 12px; font-size: 18px; }
+.generated-link input { direction: ltr; margin-bottom: 10px; }
+.public-bot-shell { min-height: calc(100dvh - 76px); display: flex; flex-direction: column; }
+.visitor-gate {
+  width: min(100%, 520px);
+  margin: auto;
+  text-align: center;
+  padding: 30px 0;
+}
+.visitor-gate h1 { font-family: var(--font-display); font-size: clamp(28px, 7vw, 42px); margin: 0 0 12px; }
+.visitor-gate > p:not(.eyebrow) { color: var(--ink-dim); line-height: 1.8; margin: 0 0 24px; }
+.visitor-gate form { display: flex; flex-direction: column; gap: 14px; text-align: start; }
+.public-chat { flex: 1; min-height: calc(100dvh - 76px); display: flex; flex-direction: column; width: 100%; }
+.public-chat .chat-header { width: 100%; padding-inline: 0; }
+#public-messages { flex: 1; width: 100%; max-width: 820px; padding-inline: 0; }
+#public-composer { margin-bottom: 0; width: 100%; }
+#public-composer-input { flex: 1; resize: none; max-height: 140px; background: transparent; border: none; padding: 10px 12px; font-size: 15px; }
+#public-composer-input:focus { outline: none; }
+
 /* ================= التطبيق ================= */
 #view-app {
   position: relative;

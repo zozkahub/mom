@@ -14,16 +14,123 @@
 <section id="view-welcome" class="view">
   <div class="orb" aria-hidden="true"></div>
   <div class="welcome-card">
-    <p class="eyebrow" id="welcome-eyebrow">أهلاً</p>
-    <h1 id="welcome-title">مساعد زياد</h1>
+    <p class="eyebrow" id="welcome-eyebrow">Personal AI Builder</p>
+    <h1 id="welcome-title">اصنع نسخة AI شخصية</h1>
     <p class="welcome-text" id="welcome-text">
-      مصمم بهدوء عشان يسمعك، ويتكلم معاكي براحة، وباحترام.
+      اكتب ملخص حياتك ومشاريعك واهتماماتك، ضيف مفتاح النموذج، وخد رابط شات شخصي يتكلم بصوتك.
     </p>
     <div class="welcome-actions">
-      <button class="btn btn--primary" id="btn-mother-enter">أنا سماح، هدخل أتكلم</button>
-      <button class="btn btn--ghost" id="btn-owner-enter">دخول زياد</button>
+      <button class="btn btn--primary" id="btn-create-public">الدخول كشخص عادي</button>
+      <button class="btn btn--ghost" id="btn-admin-enter">دخول كأدمن</button>
     </div>
+
+    <form id="admin-form" class="inline-panel" hidden>
+      <label>كلمة سر الأدمن
+        <input type="password" id="admin-password" autocomplete="current-password" />
+      </label>
+      <button type="submit" class="btn btn--primary btn--block">دخول</button>
+      <p id="admin-error" class="auth-error" hidden></p>
+    </form>
   </div>
+</section>
+
+<!-- ============ إنشاء نموذج عام ============ -->
+<section id="view-builder" class="view">
+  <main class="builder-shell">
+    <button class="link-back" id="builder-back">‹ رجوع</button>
+    <header class="builder-header">
+      <p class="eyebrow">Create</p>
+      <h1>بيانات النموذج الشخصي</h1>
+      <p>كل ما البيانات كانت أصدق وأغنى، النموذج هيحس إنه قريب من صاحب الشخصية.</p>
+    </header>
+
+    <form id="bot-builder-form" class="builder-form">
+      <label>اسم صاحب النموذج
+        <input id="bot-owner-name" required placeholder="مثال: زياد" />
+      </label>
+      <label>عنوان عام للرابط
+        <input id="bot-public-title" placeholder="مثال: نموذج زياد الشخصي" />
+      </label>
+      <label>ملخص حياته وشخصيته
+        <textarea id="bot-profile-summary" rows="5" required placeholder="احكي عن السن، العيلة، الشخصية، الأسلوب، الطموحات..."></textarea>
+      </label>
+      <label>أكلاته المفضلة
+        <textarea id="bot-favorite-foods" rows="3" placeholder="مثال: مكرونة، بانيه، بشاميل..."></textarea>
+      </label>
+      <label>نشاطاته واهتماماته المفضلة
+        <textarea id="bot-favorite-activities" rows="3" placeholder="مثال: برمجة، تليجرام، رسم، ألعاب..."></textarea>
+      </label>
+      <label>المشاريع والأعمال
+        <textarea id="bot-projects" rows="4" placeholder="اكتب المشاريع، القنوات، التطبيقات، الأعمال السابقة والحالية..."></textarea>
+      </label>
+      <label>أي حاجة تانية في الدنيا
+        <textarea id="bot-extra" rows="4" placeholder="طريقة الكلام، العلاقات، الذكريات المهمة، الحاجات اللي لازم ماينسهاش..."></textarea>
+      </label>
+
+      <div class="provider-grid">
+        <label>مزود النموذج
+          <select id="bot-provider">
+            <option value="openrouter">OpenRouter - مستحسن</option>
+            <option value="gemini">Google Gemini</option>
+            <option value="openai">OpenAI</option>
+            <option value="custom">OpenAI Compatible API</option>
+          </select>
+        </label>
+        <label>اسم الموديل
+          <input id="bot-model" placeholder="openai/gpt-oss-20b:free" />
+        </label>
+      </div>
+      <label id="bot-base-url-row" hidden>Base URL للـ API المتوافق
+        <input id="bot-base-url" placeholder="https://api.example.com/v1" />
+      </label>
+      <label>API Key
+        <input id="bot-api-key" required placeholder="sk-... أو مفتاح المزود" />
+      </label>
+
+      <div id="provider-help" class="provider-help"></div>
+      <button type="submit" class="btn btn--primary btn--block" id="create-bot-submit">إنشاء الرابط</button>
+      <p id="builder-error" class="auth-error" hidden></p>
+    </form>
+
+    <section id="generated-link-panel" class="generated-link" hidden>
+      <h2>رابط النموذج جاهز</h2>
+      <input id="generated-link" readonly />
+      <button class="btn btn--ghost" id="copy-generated-link">نسخ الرابط</button>
+    </section>
+  </main>
+</section>
+
+<!-- ============ شات نموذج عام ============ -->
+<section id="view-public-bot" class="view">
+  <main class="public-bot-shell">
+    <section id="visitor-gate" class="visitor-gate">
+      <p class="eyebrow">Personal Model</p>
+      <h1 id="public-bot-title">النموذج الشخصي</h1>
+      <p id="public-bot-intro"></p>
+      <form id="visitor-form">
+        <label>اسمك
+          <input id="visitor-name" required />
+        </label>
+        <label>تقربله إيه؟
+          <input id="visitor-relation" required placeholder="صديق، أخ، أم، متابع..." />
+        </label>
+        <button class="btn btn--primary btn--block" type="submit">ابدأ الكلام</button>
+      </form>
+    </section>
+
+    <section id="public-chat" class="public-chat" hidden>
+      <header class="chat-header">
+        <div class="chat-heading">
+          <h2 id="public-chat-title">النموذج الشخصي</h2>
+        </div>
+      </header>
+      <div id="public-messages" class="messages"></div>
+      <form id="public-composer" class="composer">
+        <textarea id="public-composer-input" placeholder="اكتب رسالتك..." rows="1"></textarea>
+        <button type="submit" class="send-btn" id="public-send-btn" aria-label="إرسال">↑</button>
+      </form>
+    </section>
+  </main>
 </section>
 
 <!-- ============ شاشة الدخول ============ -->

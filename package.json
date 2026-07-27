@@ -5,5 +5,8 @@
   "description": "موقع مساعد شخصي بذاكرة دائمة وتبديل نماذج تلقائي",
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^8.2.0"
   }
 }

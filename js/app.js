@@ -10,7 +10,13 @@ import {
 import { getMemoryProfile, setMemoryEnabled } from "./memory.js";
 
 const $ = (sel) => document.querySelector(sel);
-const views = { welcome: $("#view-welcome"), auth: $("#view-auth"), app: $("#view-app") };
+const views = {
+  welcome: $("#view-welcome"),
+  builder: $("#view-builder"),
+  publicBot: $("#view-public-bot"),
+  auth: $("#view-auth"),
+  app: $("#view-app"),
+};
 
 let isMotherMode = false;
 let authMode = "login"; // login | signup
@@ -24,6 +30,9 @@ let isSendingMessage = false;
 let transientError = "";
 let lastRenderSignature = "";
 let activeChatMeta = {};
+let currentPublicBot = null;
+let publicVisitor = null;
+let publicMessages = [];
 
 const savedStyle = localStorage.getItem("ziad-response-style");
 if (savedStyle && $("#setting-style")) {
@@ -48,20 +57,118 @@ function closeSidebar() {
   document.body.classList.remove("sidebar-open");
 }
 
-// ---------- شاشة الترحيب ----------
-$("#btn-mother-enter").addEventListener("click", () => {
-  isMotherMode = true;
-  authMode = "login";
-  $("#auth-heading").textContent = "أهلاً يا سماح";
-  showView("auth");
+// ---------- البوابة الرئيسية ----------
+const bootBotId = new URLSearchParams(location.search).get("bot");
+const isPublicRoute = Boolean(bootBotId);
+if (bootBotId) {
+  loadPublicBot(bootBotId);
+}
+
+$("#btn-create-public").addEventListener("click", () => showView("builder"));
+$("#btn-admin-enter").addEventListener("click", () => {
+  $("#admin-form").hidden = !$("#admin-form").hidden;
+  $("#admin-password").focus();
 });
-$("#btn-owner-enter").addEventListener("click", () => {
-  isMotherMode = false;
-  authMode = "login";
-  $("#auth-heading").textContent = "تسجيل الدخول";
-  showView("auth");
+
+$("#admin-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("#admin-error").hidden = true;
+  const password = $("#admin-password").value;
+
+  try {
+    const res = await fetch("/api/admin-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "فشل دخول الأدمن");
+    localStorage.setItem("ziad-admin-ok", "1");
+    isMotherMode = false;
+    authMode = "login";
+    $("#auth-heading").textContent = "دخول أدمن زياد";
+    showView("auth");
+  } catch (err) {
+    $("#admin-error").hidden = false;
+    $("#admin-error").textContent = err.message;
+  }
 });
+
 $("#auth-back").addEventListener("click", () => showView("welcome"));
+$("#builder-back").addEventListener("click", () => showView("welcome"));
+
+// ---------- إنشاء نموذج عام ----------
+const providerHelp = {
+  openrouter: "OpenRouter: افتح openrouter.ai، أنشئ API key، ثم اختر اسم موديل من صفحة Models. مثال مجاني: openai/gpt-oss-20b:free.",
+  gemini: "Google Gemini: افتح aistudio.google.com، اختر Get API key، ثم استخدم gemini-2.0-flash أو موديل متاح في حسابك.",
+  openai: "OpenAI: افتح platform.openai.com/api-keys، أنشئ مفتاحًا، ثم استخدم gpt-4o-mini أو موديل متاح لحسابك.",
+  custom: "Custom: استخدم أي API متوافق مع OpenAI. اكتب Base URL بدون /chat/completions، مثل https://api.example.com/v1.",
+};
+
+function updateProviderHelp() {
+  const provider = $("#bot-provider").value;
+  $("#provider-help").textContent = providerHelp[provider] || "";
+  $("#bot-base-url-row").hidden = provider !== "custom";
+  $("#bot-model").placeholder = provider === "gemini" ? "gemini-2.0-flash" : provider === "openai" ? "gpt-4o-mini" : provider === "custom" ? "اسم الموديل عند مزودك" : "openai/gpt-oss-20b:free";
+}
+
+$("#bot-provider").addEventListener("change", updateProviderHelp);
+updateProviderHelp();
+
+$("#bot-builder-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const submit = $("#create-bot-submit");
+  const error = $("#builder-error");
+  error.hidden = true;
+  submit.disabled = true;
+  submit.textContent = "جاري تجهيز نموذجك...";
+
+  const payload = {
+    ownerName: $("#bot-owner-name").value.trim(),
+    publicTitle: $("#bot-public-title").value.trim(),
+    profileSummary: $("#bot-profile-summary").value.trim(),
+    favoriteFoods: $("#bot-favorite-foods").value.trim(),
+    favoriteActivities: $("#bot-favorite-activities").value.trim(),
+    projects: $("#bot-projects").value.trim(),
+    extra: $("#bot-extra").value.trim(),
+    provider: $("#bot-provider").value,
+    model: $("#bot-model").value.trim(),
+    baseUrl: $("#bot-base-url").value.trim(),
+    apiKey: $("#bot-api-key").value.trim(),
+  };
+
+  try {
+    const res = await fetch("/api/create-bot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "حصلت مشكلة أثناء إنشاء النموذج.");
+    const link = `${location.origin}${location.pathname}?bot=${encodeURIComponent(data.bot.id)}`;
+    $("#generated-link").value = link;
+    $("#generated-link-panel").hidden = false;
+    $("#generated-link-panel").scrollIntoView({ behavior: "smooth", block: "center" });
+  } catch (err) {
+    error.hidden = false;
+    error.textContent = err.message;
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "إنشاء رابط النموذج";
+  }
+});
+
+$("#copy-generated-link").addEventListener("click", async () => {
+  const field = $("#generated-link");
+  try {
+    await navigator.clipboard.writeText(field.value);
+    $("#copy-generated-link").textContent = "تم نسخ الرابط";
+    setTimeout(() => { $("#copy-generated-link").textContent = "نسخ الرابط"; }, 1800);
+  } catch {
+    field.select();
+    document.execCommand("copy");
+  }
+});
 
 // ---------- الدخول ----------
 $("#auth-toggle-mode").addEventListener("click", () => {
@@ -110,16 +217,23 @@ function translateAuthError(code) {
 
 // ---------- حالة الدخول ----------
 onAuthStateChanged(auth, async (user) => {
+  if (isPublicRoute) return;
   currentUser = user;
-  if (user) {
+  if (user && localStorage.getItem("ziad-admin-ok") === "1") {
     showView("app");
     await initApp(user);
+  } else if (user) {
+    await signOut(auth);
+    showView("welcome");
   } else {
     showView("welcome");
   }
 });
 
-$("#logout-btn").addEventListener("click", () => signOut(auth));
+$("#logout-btn").addEventListener("click", async () => {
+  localStorage.removeItem("ziad-admin-ok");
+  await signOut(auth);
+});
 
 // ---------- التطبيق ----------
 async function initApp(user) {
@@ -284,6 +398,115 @@ function renderRichText(text = "") {
   closeList();
   return html.join("");
 }
+
+// ---------- الرابط العام والذاكرة المحلية ----------
+let isPublicSending = false;
+
+function publicStorageKey() {
+  if (!currentPublicBot || !publicVisitor) return "";
+  const identity = `${publicVisitor.name}|${publicVisitor.relation}`.toLowerCase();
+  return `public-bot:${currentPublicBot.id}:${encodeURIComponent(identity)}`;
+}
+
+function savePublicMessages() {
+  const key = publicStorageKey();
+  if (key) localStorage.setItem(key, JSON.stringify(publicMessages.slice(-80)));
+}
+
+function loadSavedPublicMessages() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(publicStorageKey()) || "[]");
+    publicMessages = Array.isArray(saved) ? saved.filter((m) => m && (m.role === "user" || m.role === "assistant") && m.content) : [];
+  } catch {
+    publicMessages = [];
+  }
+}
+
+function renderPublicMessages() {
+  const container = $("#public-messages");
+  if (!publicMessages.length && !isPublicSending) {
+    container.innerHTML = `<div class="empty-state"><p>ابدأ بسؤال عن ${escapeHtml(currentPublicBot?.ownerName || "صاحب النموذج")}، أو احكِ له عن نفسك.</p></div>`;
+  } else {
+    container.innerHTML = publicMessages.map((m) => `<div class="msg msg--${m.role}" dir="auto">${renderRichText(m.content)}</div>`).join("");
+    if (isPublicSending) container.innerHTML += `<div class="msg msg--assistant msg--typing" aria-label="النموذج يكتب"><span></span><span></span><span></span></div>`;
+  }
+  container.scrollTop = container.scrollHeight;
+}
+
+async function loadPublicBot(id) {
+  try {
+    const res = await fetch(`/api/get-bot?id=${encodeURIComponent(id)}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "الرابط ده غير صالح أو النموذج اتحذف.");
+    currentPublicBot = data.bot;
+    $("#public-bot-title").textContent = currentPublicBot.publicTitle || `نموذج ${currentPublicBot.ownerName}`;
+    $("#public-bot-intro").textContent = `أنت على وشك التحدث مع النسخة الرقمية من ${currentPublicBot.ownerName}. اكتب اسمك وصلتك به عشان الرد يكون مناسبًا.`;
+    $("#public-chat-title").textContent = currentPublicBot.publicTitle || currentPublicBot.ownerName;
+    showView("publicBot");
+  } catch (err) {
+    $("#public-bot-title").textContent = "النموذج غير متاح";
+    $("#public-bot-intro").textContent = err.message;
+    showView("publicBot");
+  }
+}
+
+$("#visitor-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  publicVisitor = {
+    name: $("#visitor-name").value.trim(),
+    relation: $("#visitor-relation").value.trim(),
+  };
+  if (!publicVisitor.name || !publicVisitor.relation) return;
+  loadSavedPublicMessages();
+  $("#visitor-gate").hidden = true;
+  $("#public-chat").hidden = false;
+  renderPublicMessages();
+  $("#public-composer-input").focus();
+});
+
+const publicInput = $("#public-composer-input");
+publicInput.addEventListener("input", () => {
+  publicInput.style.height = "auto";
+  publicInput.style.height = Math.min(publicInput.scrollHeight, 140) + "px";
+});
+
+$("#public-composer").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = publicInput.value.trim();
+  if (!text || !currentPublicBot || !publicVisitor || isPublicSending) return;
+  publicInput.value = "";
+  publicInput.style.height = "auto";
+  publicMessages.push({ role: "user", content: text });
+  savePublicMessages();
+  isPublicSending = true;
+  $("#public-send-btn").disabled = true;
+  renderPublicMessages();
+
+  const messages = publicMessages.slice(-20);
+  const memory = publicMessages
+    .filter((m) => m.role === "user")
+    .slice(-10)
+    .map((m) => `من كلام الزائر في المحادثات السابقة: ${m.content}`);
+
+  try {
+    const res = await fetch("/api/bot-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ botId: currentPublicBot.id, visitor: publicVisitor, messages, memory }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || data.error || "النموذج مقدرش يرد دلوقتي.");
+    publicMessages.push({ role: "assistant", content: data.reply || "مفيش رد صالح من النموذج." });
+    savePublicMessages();
+  } catch (err) {
+    publicMessages.push({ role: "assistant", content: `حصلت مشكلة: ${err.message}` });
+  } finally {
+    isPublicSending = false;
+    $("#public-send-btn").disabled = false;
+    renderPublicMessages();
+    publicInput.focus();
+  }
+});
 
 // ---------- الإرسال ----------
 const input = $("#composer-input");
