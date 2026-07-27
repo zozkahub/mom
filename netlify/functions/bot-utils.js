@@ -103,6 +103,12 @@ ${bot.extra || "غير محدد"}
 ذاكرة محلية من هذه المحادثة:
 ${(memory || []).map((item) => `- ${item}`).join("\n") || "لا توجد بعد"}
 
+حقائق صاحب النموذج هي المصدر الأساسي:
+- لو السؤال عن هويته أو عمره أو مكانه، استخدم ملخص حياته فقط.
+- لو السؤال عن الأكل، استخدم قسم الأكلات المفضلة فقط.
+- لو السؤال عن شغله أو مشاريعه، استخدم قسم المشاريع والأعمال فقط.
+- لو المعلومة غير موجودة فعلًا، قل إنها غير موجودة بدل اختراع إجابة أو تغيير الموضوع.
+
 قواعد الرد:
 - لا تبدأ برد عام مثل «كيف يمكنني مساعدتك؟» طالما السؤال له علاقة بصاحب النموذج أو بهوية الزائر.
 - استخدم اسم الزائر وصلته بشكل طبيعي، ولا تقل إنك لا تعرفه ما دامت البيانات أعلاه موجودة.
@@ -114,63 +120,162 @@ ${(memory || []).map((item) => `- ${item}`).join("\n") || "لا توجد بعد"
   `.trim();
 }
 
-async function callOpenRouter({ apiKey, model, messages, systemPrompt }) {
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      "HTTP-Referer": process.env.URL || "https://netlify.app",
-      "X-OpenRouter-Title": "Personal AI Builder",
-    },
-    body: JSON.stringify({
-      model: model || "openai/gpt-oss-20b:free",
-      messages: [{ role: "system", content: systemPrompt }, ...messages],
-      temperature: 0.75,
-      max_tokens: 1800,
-    }),
-  });
+function normalizeQuestion(text = "") {
+  return String(text)
+    .toLowerCase()
+    .replace(/[ًٌٍَُِّْـ]/g, "")
+    .replace(/[إأآا]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/[؟?!.,،:؛]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
+function getDirectReply(bot, visitor, text = "") {
+  const question = normalizeQuestion(text);
+  const owner = bot.ownerName || "صاحب النموذج";
+  const visitorName = visitor.name || "لسه ماكتبتش اسمك";
+  const relation = visitor.relation || "لسه ماحددتش صلتك";
+
+  if (/(^| )(انا مين|فاكرني|انت عارفني)( |$)/.test(question)) {
+    return `إنت ${visitorName}، وقلت إنك ${relation} لـ${owner}. وأنا النسخة الرقمية من ${owner}، فهفتكرك بالمعلومات دي طول المحادثة.`;
+  }
+
+  if (/(^| )(من انت|انت مين|بكلم مين|انا بكلم مين)( |$)/.test(question)) {
+    return `أنا النسخة الرقمية من ${owner}، وبكلم ${visitorName} اللي قال إن علاقته بيك هي: ${relation}.`;
+  }
+
+  if (/(اكل|اكله|اكلتك|بتاكل|بتحب تاكل|وجبه|مفضله)/.test(question)) {
+    return bot.favoriteFoods
+      ? `أكلاتي المفضلة: ${bot.favoriteFoods}`
+      : "لسه مفيش أكلات مفضلة متسجلة عندي في بيانات النموذج.";
+  }
+
+  if (/(مشروع|مشاريع|شغل|اعمال|بتعمل ايه|بتشتغل ايه)/.test(question)) {
+    return bot.projects
+      ? `دي مشاريعي وأعمالي: ${bot.projects}`
+      : "لسه مفيش مشاريع أو أعمال متسجلة عندي في بيانات النموذج.";
+  }
+
+  if (/(عامل ايه|اخبارك|ازيك|احوالك)/.test(question)) {
+    return `أنا تمام يا ${visitorName}، ومبسوط إنك بتكلمني. قولّي حابب نتكلم عن إيه؟`;
+  }
+
+  return "";
+}
+
+function withTimeout(ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return { signal: controller.signal, cancel: () => clearTimeout(timer) };
+}
+
+async function readModelResponse(res, provider) {
   const raw = await res.text();
-  if (!res.ok) throw new Error(raw.slice(0, 500) || `OpenRouter HTTP ${res.status}`);
-  const data = raw ? JSON.parse(raw) : {};
-  return data?.choices?.[0]?.message?.content || "";
+  let data = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new Error(`${provider} رجّع ردًا غير صالح (HTTP ${res.status}).`);
+  }
+  if (!res.ok) {
+    const detail = data?.error?.message || data?.error || data?.message || raw.slice(0, 300);
+    throw new Error(`${provider} رفض الطلب (HTTP ${res.status}): ${detail || "راجع المفتاح واسم الموديل."}`);
+  }
+  return data;
+}
+
+function getAssistantText(data) {
+  const content = data?.choices?.[0]?.message?.content;
+  if (Array.isArray(content)) {
+    return content.map((part) => typeof part === "string" ? part : part?.text || "").join("").trim();
+  }
+  return typeof content === "string" ? content.trim() : "";
+}
+
+async function callOpenRouter({ apiKey, model, messages, systemPrompt }) {
+  const { signal, cancel } = withTimeout(Number(process.env.PERSONAL_MODEL_TIMEOUT_MS || 8500));
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "HTTP-Referer": process.env.URL || "https://netlify.app",
+        "X-OpenRouter-Title": "Personal AI Builder",
+      },
+      body: JSON.stringify({
+        model: model || "openai/gpt-oss-20b:free",
+        messages: [{ role: "system", content: systemPrompt }, ...messages],
+        temperature: 0.65,
+        max_tokens: 900,
+      }),
+    });
+    const data = await readModelResponse(res, "OpenRouter");
+    const reply = getAssistantText(data);
+    if (!reply) throw new Error("OpenRouter رجّع ردًا فارغًا. راجع اسم الموديل أو جرّب موديلًا أسرع.");
+    return reply;
+  } catch (err) {
+    if (err?.name === "AbortError") throw new Error("OpenRouter اتأخر أكثر من 8.5 ثواني. اختار موديلًا أسرع أو راجع حالة الموديل.");
+    throw err;
+  } finally {
+    cancel();
+  }
 }
 
 async function callOpenAICompatible({ apiKey, baseUrl, model, messages, systemPrompt }) {
   const normalizedBaseUrl = String(baseUrl || "").replace(/\/$/, "");
   const url = normalizedBaseUrl.endsWith("/chat/completions") ? normalizedBaseUrl : `${normalizedBaseUrl}/chat/completions`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: "system", content: systemPrompt }, ...messages],
-      temperature: 0.75,
-      max_tokens: 1800,
-    }),
-  });
-  const raw = await res.text();
-  if (!res.ok) throw new Error(raw.slice(0, 500) || `API HTTP ${res.status}`);
-  const data = raw ? JSON.parse(raw) : {};
-  return data?.choices?.[0]?.message?.content || "";
+  const { signal, cancel } = withTimeout(Number(process.env.PERSONAL_MODEL_TIMEOUT_MS || 8500));
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "system", content: systemPrompt }, ...messages],
+        temperature: 0.65,
+        max_tokens: 900,
+      }),
+    });
+    const data = await readModelResponse(res, "API المخصص");
+    const reply = getAssistantText(data);
+    if (!reply) throw new Error("الـ API رجّع ردًا فارغًا أو بصيغة غير مدعومة.");
+    return reply;
+  } catch (err) {
+    if (err?.name === "AbortError") throw new Error("الـ API المخصص اتأخر أكثر من 8.5 ثواني.");
+    throw err;
+  } finally {
+    cancel();
+  }
 }
 
 async function callGemini({ apiKey, model, messages, systemPrompt }) {
   const prompt = [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${messages.map((m) => `${m.role}: ${m.content}`).join("\n")}` }] }];
   const targetModel = model || "gemini-2.0-flash";
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contents: prompt }),
-  });
-  const raw = await res.text();
-  if (!res.ok) throw new Error(raw.slice(0, 500) || `Gemini HTTP ${res.status}`);
-  const data = raw ? JSON.parse(raw) : {};
-  return data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("").trim() || "";
+  const { signal, cancel } = withTimeout(Number(process.env.PERSONAL_MODEL_TIMEOUT_MS || 8500));
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`, {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: prompt }),
+    });
+    const data = await readModelResponse(res, "Gemini");
+    const reply = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("").trim();
+    if (!reply) throw new Error("Gemini رجّع ردًا فارغًا أو متوقفًا.");
+    return reply;
+  } catch (err) {
+    if (err?.name === "AbortError") throw new Error("Gemini اتأخر أكثر من 8.5 ثواني.");
+    throw err;
+  } finally {
+    cancel();
+  }
 }
 
 async function callBotModel({ bot, apiKey, messages, systemPrompt }) {
@@ -197,5 +302,6 @@ module.exports = {
   getBotsStore,
   publicBot,
   buildBotPrompt,
+  getDirectReply,
   callBotModel,
 };

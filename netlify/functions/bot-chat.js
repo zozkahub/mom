@@ -4,6 +4,7 @@ const {
   decrypt,
   getBotsStore,
   buildBotPrompt,
+  getDirectReply,
   callBotModel,
 } = require("./bot-utils");
 
@@ -39,13 +40,6 @@ exports.handler = async (event) => {
     : [];
   if (!messages.length) return json(400, { error: "لازم تبعت رسالة." });
 
-  let apiKey;
-  try {
-    apiKey = decrypt(bot.encryptedApiKey);
-  } catch {
-    return json(500, { error: "فشل فك تشفير مفتاح النموذج. راجع BOT_STORAGE_SECRET." });
-  }
-
   const memory = Array.isArray(payload.memory)
     ? payload.memory.filter((item) => typeof item === "string").slice(-24).map((item) => item.slice(0, 1000))
     : [];
@@ -53,6 +47,17 @@ exports.handler = async (event) => {
     name: String(payload.visitor?.name || "").trim().slice(0, 120),
     relation: String(payload.visitor?.relation || "").trim().slice(0, 160),
   };
+  const latestUserMessage = messages.filter((message) => message.role === "user").at(-1)?.content || "";
+  const directReply = getDirectReply(bot, visitor, latestUserMessage);
+  if (directReply) return json(200, { reply: directReply, direct: true });
+
+  let apiKey;
+  try {
+    apiKey = decrypt(bot.encryptedApiKey);
+  } catch {
+    return json(500, { error: "فشل فك تشفير مفتاح النموذج. راجع BOT_STORAGE_SECRET." });
+  }
+
   const systemPrompt = buildBotPrompt(bot, visitor, memory);
 
   try {
