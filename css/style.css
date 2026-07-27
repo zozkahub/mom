@@ -269,6 +269,11 @@ button, input, select, textarea {
   gap: 6px;
   color: var(--ink-dim);
 }
+.chat-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .chat-item:hover, .chat-item.active { background: var(--bg-panel-2); color: var(--ink); }
 .chat-item .pin { opacity: .6; }
 .sidebar-bottom { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid rgba(237,231,221,0.08); padding-top: 10px; }
@@ -315,8 +320,31 @@ button, input, select, textarea {
   line-height: 1.75;
   font-size: 15px;
   animation: msgIn .28s ease both;
-  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  unicode-bidi: plaintext;
 }
+.msg p { margin: 0 0 8px; }
+.msg p:last-child { margin-bottom: 0; }
+.msg h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.msg ul {
+  margin: 6px 0 8px;
+  padding-inline-start: 20px;
+}
+.msg li { margin: 3px 0; }
+.msg code {
+  background: rgba(237,231,221,0.1);
+  border: 1px solid rgba(237,231,221,0.08);
+  border-radius: 6px;
+  padding: 1px 5px;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.msg strong { font-weight: 700; }
 @keyframes msgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 .msg--user { align-self: flex-end; background: linear-gradient(135deg, var(--gold), #B08F52); color: #1B1607; border-bottom-left-radius: 4px; }
 .msg--assistant { align-self: flex-start; background: var(--bg-panel); border-bottom-right-radius: 4px; }
@@ -407,6 +435,7 @@ input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--gold); }
 @media (min-width: 860px) {
   body { overflow: auto; }
   .sidebar { position: static; transform: none; width: 280px; }
+  [dir="rtl"] .sidebar { transform: none; }
   #view-app { flex-direction: row; }
   .chat-main { flex: 1; }
   #toggle-sidebar { display: none; }

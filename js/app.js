@@ -20,6 +20,11 @@ let unsubChats = null;
 let unsubMessages = null;
 let messagesCache = [];
 
+const savedStyle = localStorage.getItem("ziad-response-style");
+if (savedStyle && $("#setting-style")) {
+  $("#setting-style").value = savedStyle;
+}
+
 function showView(name) {
   Object.values(views).forEach((v) => v.classList.remove("view--active"));
   views[name].classList.add("view--active");
@@ -161,13 +166,59 @@ function renderMessages(msgs) {
   $("#messages").innerHTML =
     `<div class="empty-state" id="empty-state" ${msgs.length ? "hidden" : ""}><p>ابدئي بأي كلمة، أنا موجود.</p></div>` +
     msgs
-      .map((m) => `<div class="msg msg--${m.role}">${escapeHtml(m.text)}</div>`)
+      .map((m) => `<div class="msg msg--${m.role}" dir="auto">${renderRichText(m.text)}</div>`)
       .join("");
   $("#messages").scrollTop = $("#messages").scrollHeight;
 }
 
 function escapeHtml(str = "") {
-  return str.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function renderInlineMarkdown(text = "") {
+  return escapeHtml(text)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*\n]+)\*/g, "<strong>$1</strong>");
+}
+
+function renderRichText(text = "") {
+  const lines = String(text).replace(/\r\n/g, "\n").split("\n");
+  const html = [];
+  let inList = false;
+
+  const closeList = () => {
+    if (inList) {
+      html.push("</ul>");
+      inList = false;
+    }
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    const heading = line.match(/^#{1,3}\s+(.+)/);
+    const bullet = line.match(/^[-*]\s+(.+)/);
+
+    if (!line.trim()) {
+      closeList();
+      html.push("<br>");
+    } else if (heading) {
+      closeList();
+      html.push(`<h3>${renderInlineMarkdown(heading[1])}</h3>`);
+    } else if (bullet) {
+      if (!inList) {
+        html.push("<ul>");
+        inList = true;
+      }
+      html.push(`<li>${renderInlineMarkdown(bullet[1])}</li>`);
+    } else {
+      closeList();
+      html.push(`<p>${renderInlineMarkdown(line)}</p>`);
+    }
+  }
+
+  closeList();
+  return html.join("");
 }
 
 // ---------- الإرسال ----------
@@ -189,7 +240,12 @@ $("#composer").addEventListener("submit", async (e) => {
   const history = messagesCache.slice(-16).map((m) => ({ role: m.role, content: m.text }));
 
   try {
-    await sendMessage(currentUser.uid, currentChatId, { text, isMotherMode, history });
+    await sendMessage(currentUser.uid, currentChatId, {
+      text,
+      isMotherMode,
+      history,
+      responseStyle: $("#setting-style").value,
+    });
   } catch (err) {
     alert(err.message);
   } finally {
@@ -207,6 +263,10 @@ $("#settings-close").addEventListener("click", () => ($("#settings-panel").hidde
 
 $("#setting-memory").addEventListener("change", async (e) => {
   await setMemoryEnabled(currentUser.uid, e.target.checked);
+});
+
+$("#setting-style").addEventListener("change", (e) => {
+  localStorage.setItem("ziad-response-style", e.target.value);
 });
 
 function renderMemoryFacts(facts, motherFacts = []) {

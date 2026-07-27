@@ -1,7 +1,7 @@
 // js/memory.js
 import { db, doc, getDoc, setDoc } from "./firebase-init.js";
 
-const MAX_FACTS = 40; // سقف عشان الذاكرة تفضل مركّزة على الأهم مش أي كلام عابر
+const MAX_FACTS = 120; // مساحة أكبر للذاكرة الدائمة بدون تحويلها لسجل خام لكل الكلام
 
 // بنخزن حقائق زياد وحقائق أمه في حقلين منفصلين تمامًا، عشان الـ AI ميخلطش
 // معلومة اتقالت في محادثة مع سماح مع معلومة اتقالت في محادثة مع زياد.
@@ -33,12 +33,20 @@ export async function addMemoryFacts(uid, newFacts = [], isMotherMode = false) {
   const snap = await getDoc(ref);
   const existing = snap.exists() ? snap.data()[field] || [] : [];
 
-  // امنع تكرار حرفي لنفس المعلومة
+  const normalize = (value) =>
+    String(value || "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .toLowerCase();
+
   const merged = [...existing];
   for (const f of newFacts) {
-    if (!merged.some((e) => e.trim() === f.trim())) merged.push(f.trim());
+    const fact = String(f || "").trim().replace(/\s+/g, " ");
+    if (fact.length < 6 || fact.length > 220) continue;
+    if (!merged.some((e) => normalize(e) === normalize(fact))) merged.push(fact);
   }
-  const trimmed = merged.slice(-MAX_FACTS); // احتفظ بآخر الحقائق الأهم فقط
+
+  const trimmed = merged.slice(-MAX_FACTS);
 
   await setDoc(ref, { [field]: trimmed, updatedAt: Date.now() }, { merge: true });
 }
@@ -55,9 +63,10 @@ export async function extractFacts(userTexts = []) {
 
   const extractionPrompt = `
 جاي دلوقتي مجموعة رسايل، كل الرسايل دي من المستخدم نفسه بس (مفيش رد من أي مساعد فيها خالص).
-استخرج منها بس المعلومات الثابتة والمهمة اللي المستخدم قالها فعلًا عن نفسه (زي: الاسم، طريقة النداء، حاجة مفضلة، أسلوب رد بيفضله، موضوع بيتكرر).
+استخرج منها بس المعلومات الثابتة والمهمة اللي المستخدم قالها فعلًا عن نفسه (زي: الاسم، طريقة النداء، المشاريع، الأهداف، التفضيلات، الأكل، طريقة التعامل، أسلوب رد بيفضله، موضوع بيتكرر).
 متخترعش ولا تفترض حاجة المستخدم ماقالهاش، ومترجعش أي حاجة اتقالت في رد المساعد لأنها مش موجودة هنا أصلًا.
 تجاهل أي حاجة مؤقتة أو حالة نفسية لحظية أو موضوع عابر.
+لو المعلومة متعلقة بضرر أو سرقة أو احتيال، احفظها كتحذير أو سياق آمن فقط، وليس كهدف مطلوب تنفيذه.
 رد بس بقايمة JSON من نصوص قصيرة، من غير أي شرح. لو مفيش حاجة ثابتة تستاهل الحفظ، رجّع [].
 مثال: ["بيحب يتنادى عليه زياد", "بيفضل الردود القصيرة"]
   `.trim();
