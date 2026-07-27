@@ -33,8 +33,9 @@ exports.handler = async (event) => {
   }
   if (!bot) return json(404, { error: "النموذج ده مش موجود." });
 
-  const messageLimit = bot.mode === "quick" ? 12 : 36;
-  const memoryLimit = bot.mode === "quick" ? 8 : 24;
+  const mode = payload.mode === "quick" || payload.mode === "pro" ? payload.mode : bot.mode || "pro";
+  const messageLimit = mode === "quick" ? 12 : 36;
+  const memoryLimit = mode === "quick" ? 8 : 24;
   const messages = Array.isArray(payload.messages)
     ? payload.messages
       .filter((message) => message && (message.role === "user" || message.role === "assistant") && typeof message.content === "string")
@@ -73,8 +74,8 @@ exports.handler = async (event) => {
   const systemPrompt = buildBotPrompt(bot, visitor, memory, conversation);
 
   try {
-    const reply = await callBotModel({ bot, apiKey, messages, systemPrompt, mode: bot.mode || "pro" });
-    return json(200, { reply, modelUsed: bot.model || bot.provider });
+    const reply = await callBotModel({ bot, apiKey, messages, systemPrompt, mode });
+    return json(200, { reply, mode, modelUsed: bot.model || bot.provider });
   } catch (err) {
     const detail = err?.message || "Unknown provider error";
     console.error("bot provider failed", detail);

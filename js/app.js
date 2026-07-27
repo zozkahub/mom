@@ -33,6 +33,7 @@ let activeChatMeta = {};
 let currentPublicBot = null;
 let publicVisitor = null;
 let publicMessages = [];
+let publicMode = "pro";
 
 const savedStyle = localStorage.getItem("ziad-response-style");
 if (savedStyle && $("#setting-style")) {
@@ -431,6 +432,44 @@ function publicStorageKey() {
   return `public-bot:${currentPublicBot.id}:${encodeURIComponent(identity)}`;
 }
 
+function publicModeStorageKey() {
+  return currentPublicBot ? `public-mode:${currentPublicBot.id}` : "";
+}
+
+function updatePublicModeUI() {
+  $("#public-model-toggle").setAttribute("aria-expanded", String(!$("#public-model-menu").hidden));
+  document.querySelectorAll(".public-model-option").forEach((option) => {
+    const selected = option.dataset.mode === publicMode;
+    option.setAttribute("aria-checked", String(selected));
+  });
+}
+
+function setPublicMode(mode) {
+  if (mode !== "quick" && mode !== "pro") return;
+  publicMode = mode;
+  const key = publicModeStorageKey();
+  if (key) localStorage.setItem(key, publicMode);
+  $("#public-model-menu").hidden = true;
+  updatePublicModeUI();
+}
+
+$("#public-model-toggle").addEventListener("click", (event) => {
+  event.stopPropagation();
+  $("#public-model-menu").hidden = !$("#public-model-menu").hidden;
+  updatePublicModeUI();
+});
+
+document.querySelectorAll(".public-model-option").forEach((option) => {
+  option.addEventListener("click", () => setPublicMode(option.dataset.mode));
+});
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".public-model-picker")) {
+    $("#public-model-menu").hidden = true;
+    updatePublicModeUI();
+  }
+});
+
 function savePublicMessages() {
   const key = publicStorageKey();
   if (key) localStorage.setItem(key, JSON.stringify(publicMessages.slice(-80)));
@@ -478,9 +517,12 @@ async function loadPublicBot(id) {
     const data = await readApiResponse(res);
     if (!res.ok) throw new Error(data.error || "الرابط ده غير صالح أو النموذج اتحذف.");
     currentPublicBot = data.bot;
+    const savedMode = localStorage.getItem(`public-mode:${currentPublicBot.id}`);
+    publicMode = savedMode === "quick" || savedMode === "pro" ? savedMode : currentPublicBot.mode || "pro";
     $("#public-bot-title").textContent = currentPublicBot.publicTitle || `نموذج ${currentPublicBot.ownerName}`;
     $("#public-bot-intro").textContent = `أنت على وشك التحدث مع النسخة الرقمية من ${currentPublicBot.ownerName}. اكتب اسمك وصلتك به عشان الرد يكون مناسبًا.`;
-    $("#public-chat-title").textContent = currentPublicBot.publicTitle || currentPublicBot.ownerName;
+    $("#public-chat-person").textContent = currentPublicBot.publicTitle || currentPublicBot.ownerName;
+    updatePublicModeUI();
     loadSavedPublicVisitor();
     showView("publicBot");
   } catch (err) {
@@ -524,7 +566,7 @@ $("#public-composer").addEventListener("submit", async (e) => {
   $("#public-send-btn").disabled = true;
   renderPublicMessages();
 
-  const contextLimit = currentPublicBot.mode === "quick" ? 12 : 36;
+  const contextLimit = publicMode === "quick" ? 12 : 36;
   const messages = publicMessages.slice(-contextLimit);
   const memory = [];
   let memoryBudget = 12000;
@@ -539,7 +581,7 @@ $("#public-composer").addEventListener("submit", async (e) => {
     const request = (requestMessages, requestMemory) => fetch("/api/bot-chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ botId: currentPublicBot.id, visitor: publicVisitor, messages: requestMessages, memory: requestMemory }),
+      body: JSON.stringify({ botId: currentPublicBot.id, visitor: publicVisitor, mode: publicMode, messages: requestMessages, memory: requestMemory }),
     });
 
     let data;
@@ -605,7 +647,11 @@ $("#toggle-sidebar").addEventListener("click", openSidebar);
 $("#close-sidebar").addEventListener("click", closeSidebar);
 $("#sidebar-overlay").addEventListener("click", closeSidebar);
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeSidebar();
+  if (e.key === "Escape") {
+    closeSidebar();
+    $("#public-model-menu").hidden = true;
+    updatePublicModeUI();
+  }
 });
 
 // ---------- الإعدادات ----------

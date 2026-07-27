@@ -140,8 +140,20 @@
 
     <section id="public-chat" class="public-chat" hidden>
       <header class="chat-header">
-        <div class="chat-heading">
-          <h2 id="public-chat-title">النموذج الشخصي</h2>
+        <div class="public-chat-heading">
+          <div class="public-model-picker">
+            <button type="button" id="public-model-toggle" class="public-model-toggle" aria-expanded="false" aria-haspopup="true">
+              <span>your digital</span><span class="public-model-chevron" aria-hidden="true">›</span>
+            </button>
+            <div id="public-model-menu" class="public-model-menu" hidden>
+              <button type="button" class="public-model-option" data-mode="quick" role="menuitemradio" aria-checked="false">
+                <span><strong>Fast</strong><small>رد أسرع وسياق مختصر</small></span><span class="mode-check" aria-hidden="true"></span>
+              </button>
+              <button type="button" class="public-model-option" data-mode="pro" role="menuitemradio" aria-checked="true">
+                <span><strong>Pro</strong><small>ذاكرة أوسع وردود أذكى</small></span><span class="mode-check" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
           <p id="public-chat-person"></p>
         </div>
       </header>

@@ -383,7 +383,68 @@ button, input, select, textarea {
 .visitor-gate .visitor-note { color: var(--teal); font-size: 13px; margin-top: -14px; }
 .visitor-gate form { display: flex; flex-direction: column; gap: 14px; text-align: start; }
 .public-chat { flex: 1; min-height: calc(100dvh - 76px); display: flex; flex-direction: column; width: 100%; }
-.public-chat .chat-header { width: 100%; padding-inline: 0; }
+.public-chat .chat-header { width: 100%; padding-inline: 0; position: relative; }
+.public-chat-heading { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.public-model-picker { position: relative; }
+.public-model-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 7px 4px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 7px;
+}
+.public-model-toggle:hover { background: var(--bg-panel-2); }
+.public-model-chevron {
+  display: inline-block;
+  color: var(--ink-dim);
+  font-size: 22px;
+  line-height: .7;
+  transform: rotate(90deg);
+  transition: transform .18s ease;
+}
+.public-model-toggle[aria-expanded="true"] .public-model-chevron { transform: rotate(-90deg); }
+.public-model-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  inset-inline-start: 0;
+  z-index: 12;
+  width: 220px;
+  padding: 6px;
+  background: #272727;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 9px;
+  box-shadow: 0 14px 34px rgba(0,0,0,.36);
+  animation: modelMenuIn .16s ease both;
+}
+.public-model-menu[hidden] { display: none; }
+@keyframes modelMenuIn { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.public-model-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  padding: 10px;
+  background: transparent;
+  color: var(--ink);
+  text-align: start;
+  cursor: pointer;
+}
+.public-model-option:hover, .public-model-option[aria-checked="true"] { background: rgba(255,255,255,.08); }
+.public-model-option > span:first-child { display: flex; flex-direction: column; gap: 3px; }
+.public-model-option strong { font-size: 14px; }
+.public-model-option small { color: var(--ink-dim); font-size: 11px; }
+.mode-check { width: 8px; height: 8px; border-radius: 50%; background: transparent; flex: 0 0 auto; }
+.public-model-option[aria-checked="true"] .mode-check { background: var(--gold); box-shadow: 0 0 0 3px rgba(231,193,109,.15); }
+#public-chat-person { margin: 0; color: var(--ink-dim); font-size: 12px; max-width: min(72vw, 640px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #public-messages { flex: 1; width: 100%; max-width: 820px; padding-inline: 0; }
 #public-composer { margin-bottom: 0; width: 100%; }
 #public-composer-input { flex: 1; resize: none; max-height: 140px; background: transparent; border: none; padding: 10px 12px; font-size: 15px; }
