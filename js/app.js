@@ -23,6 +23,7 @@ let isCreatingChat = false;
 let isSendingMessage = false;
 let transientError = "";
 let lastRenderSignature = "";
+let activeChatMeta = {};
 
 const savedStyle = localStorage.getItem("ziad-response-style");
 if (savedStyle && $("#setting-style")) {
@@ -149,7 +150,7 @@ function renderChatList(chats) {
     });
   });
 
-  if (activeChat) $("#chat-title").textContent = activeChat.title || "محادثة";
+  if (activeChat) setChatHeading(activeChat);
   if (!currentChatId && sorted.length) openChat(sorted[0].id);
 }
 
@@ -181,12 +182,18 @@ function openChat(chatId) {
   transientError = "";
   lastRenderSignature = "";
   const chat = allChats.find((c) => c.id === chatId);
-  $("#chat-title").textContent = chat ? chat.title : "محادثة";
+  setChatHeading(chat);
   if (unsubMessages) unsubMessages();
   unsubMessages = listenMessages(currentUser.uid, chatId, renderMessages);
   document.querySelectorAll(".chat-item").forEach((el) =>
     el.classList.toggle("active", el.dataset.id === chatId)
   );
+}
+
+function setChatHeading(chat = {}) {
+  activeChatMeta = chat || {};
+  $("#chat-title").textContent = chat?.title || "محادثة";
+  $("#chat-subtitle").textContent = chat?.aiNextPrompt || chat?.aiSummary || "";
 }
 
 function renderMessages(msgs) {
@@ -195,6 +202,7 @@ function renderMessages(msgs) {
     ids: msgs.map((m) => `${m.id}:${m.role}:${m.text}`),
     isSendingMessage,
     transientError,
+    nextPrompt: activeChatMeta.aiNextPrompt || "",
   });
 
   if (signature === lastRenderSignature) return;
@@ -202,7 +210,9 @@ function renderMessages(msgs) {
 
   $("#empty-state").hidden = msgs.length > 0;
   $("#messages").innerHTML =
-    `<div class="empty-state" id="empty-state" ${msgs.length ? "hidden" : ""}><p>ابدئي بأي كلمة، أنا موجود.</p></div>` +
+    `<div class="empty-state" id="empty-state" ${msgs.length ? "hidden" : ""}>
+      <p>${escapeHtml(activeChatMeta.aiNextPrompt || "ابدأ بأي كلمة، أنا موجود.")}</p>
+    </div>` +
     msgs
       .map((m) => `<div class="msg msg--${m.role}" dir="auto">${renderRichText(m.text)}</div>`)
       .join("") +

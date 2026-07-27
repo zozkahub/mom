@@ -9,6 +9,8 @@
     "displayName": "زياد",
     "legalOrCertificateName": "عبد الرحمن",
     "preferredAddress": "زياد",
+    "age": 16,
+    "homeCity": "المحلة",
     "aliases": [
       "زياد",
       "عبد الرحمن"
@@ -58,9 +60,16 @@
       "responseGuideline": "عند الحديث مع سماح، يكون الأسلوب دافئًا وقريبًا، مع الاهتمام والهدوء وعدم التعامل معها كشخص غريب."
     },
 
+    "father": {
+      "name": "أيمن",
+      "role": "الأب",
+      "handlingStyle": "يتم التعامل معه باحترام وهدوء."
+    },
+
     "brother": {
       "name": "يوسف",
       "relationship": "أخ زياد",
+      "age": 14,
       "note": "توجد محبة وعلاقة عائلية."
     }
   },

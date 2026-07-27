@@ -7,7 +7,7 @@ import { buildSystemPrompt } from "./persona.js";
 import { getMemoryProfile, addMemoryFacts, extractFacts } from "./memory.js";
 
 const DEFAULT_CHAT_TITLE = "محادثة جديدة";
-const PAST_CONTEXT_CHAT_LIMIT = 8;
+const PAST_CONTEXT_CHAT_LIMIT = 16;
 const PAST_CONTEXT_MESSAGE_LIMIT = 24;
 
 export function chatsRef(uid) {
@@ -21,6 +21,9 @@ export function messagesRef(uid, chatId) {
 export async function createChat(uid, { title = "محادثة جديدة", isMotherMode = false } = {}) {
   const ref = await addDoc(chatsRef(uid), {
     title,
+    aiSummary: "",
+    aiNextPrompt: "",
+    titleManual: false,
     pinned: false,
     isMotherMode,
     createdAt: serverTimestamp(),
@@ -61,13 +64,23 @@ function getSearchTerms(text = "") {
 
 async function getRelevantPastContext(uid, currentChatId, userText) {
   const terms = getSearchTerms(userText);
-  if (!terms.length) return [];
-
   const chatsSnap = await getDocs(query(chatsRef(uid), orderBy("updatedAt", "desc"), limit(PAST_CONTEXT_CHAT_LIMIT)));
   const snippets = [];
+  const summaries = [];
 
   for (const chatDoc of chatsSnap.docs) {
     if (chatDoc.id === currentChatId) continue;
+    const chatData = chatDoc.data();
+
+    if (chatData.aiSummary || chatData.aiNextPrompt) {
+      summaries.push(
+        `[${chatData.title || DEFAULT_CHAT_TITLE}] ${chatData.aiSummary || ""}${
+          chatData.aiNextPrompt ? ` | متابعة مقترحة: ${chatData.aiNextPrompt}` : ""
+        }`.trim()
+      );
+    }
+
+    if (!terms.length) continue;
 
     const msgSnap = await getDocs(
       query(messagesRef(uid, chatDoc.id), orderBy("createdAt", "desc"), limit(PAST_CONTEXT_MESSAGE_LIMIT))
@@ -85,16 +98,115 @@ async function getRelevantPastContext(uid, currentChatId, userText) {
       snippets.push({
         score,
         role: msg.role || "unknown",
-        chatTitle: chatDoc.data().title || DEFAULT_CHAT_TITLE,
+        chatTitle: chatData.title || DEFAULT_CHAT_TITLE,
         text: text.length > 260 ? `${text.slice(0, 257).trim()}...` : text,
       });
     }
   }
 
-  return snippets
+  const relevantSnippets = snippets
     .sort((a, b) => b.score - a.score)
     .slice(0, 8)
     .map((item) => `[${item.chatTitle} / ${item.role}] ${item.text}`);
+
+  return [
+    ...summaries.slice(0, 10).map((item) => `ملخص محادثة: ${item}`),
+    ...relevantSnippets,
+  ].slice(0, 16);
+}
+
+function parseJsonObject(text = "") {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const match = String(text).match(/\{[\s\S]*\}/);
+    if (!match) return {};
+    try {
+      return JSON.parse(match[0]);
+    } catch {
+      return {};
+    }
+  }
+}
+
+function cleanShortText(text = "", fallback = "") {
+  return String(text || fallback)
+    .replace(/\s+/g, " ")
+    .replace(/["{}[\]]/g, "")
+    .trim()
+    .slice(0, 160);
+}
+
+async function generateConversationMetadata({ currentTitle, userText, assistantReply, history }) {
+  const metadataPrompt = `
+أنت منظم ذاكرة محادثات لتطبيق شات شخصي.
+ارجع JSON فقط بدون شرح:
+{
+  "title": "عنوان عربي قصير جدًا يلخص طلب المستخدم، 3 إلى 7 كلمات",
+  "summary": "ملخص عربي محدد لما دار في المحادثة وما يجب تذكره لاحقًا",
+  "nextPrompt": "سؤال متابعة طبيعي يبدأ بـ تحب نكمل..."
+}
+لا تستخدم عنوان عام مثل محادثة جديدة. لا تكتب markdown.
+  `.trim();
+
+  const compactHistory = (history || [])
+    .slice(-8)
+    .map((m) => `${m.role}: ${m.content}`)
+    .join("\n");
+
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemPrompt: metadataPrompt,
+      messages: [
+        {
+          role: "user",
+          content: `
+العنوان الحالي: ${currentTitle || DEFAULT_CHAT_TITLE}
+
+سياق سابق مختصر:
+${compactHistory}
+
+آخر رسالة من المستخدم:
+${userText}
+
+رد زياد الرقمي:
+${assistantReply}
+          `.trim(),
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) return {};
+  const data = await res.json().catch(() => ({}));
+  return parseJsonObject(data.reply || "");
+}
+
+async function updateConversationMemory(uid, chatId, { chatData, text, reply, history }) {
+  const metadata = await generateConversationMetadata({
+    currentTitle: chatData.title,
+    userText: text,
+    assistantReply: reply,
+    history,
+  });
+
+  const title = cleanShortText(metadata.title, makeChatTitle(text)).slice(0, 56);
+  const aiSummary = cleanShortText(metadata.summary, `${text} / ${reply}`.slice(0, 180));
+  const aiNextPrompt = cleanShortText(metadata.nextPrompt, "تحب نكمل من نفس النقطة؟");
+
+  const patch = {
+    aiSummary,
+    aiNextPrompt,
+    summarizedAt: Date.now(),
+  };
+
+  if (!chatData.titleManual && title && title !== DEFAULT_CHAT_TITLE) {
+    patch.title = title;
+  }
+
+  await updateDoc(doc(db, "users", uid, "chats", chatId), patch);
 }
 
 export function listenChats(uid, cb) {
@@ -112,7 +224,7 @@ export function listenMessages(uid, chatId, cb) {
 }
 
 export async function renameChat(uid, chatId, title) {
-  await updateDoc(doc(db, "users", uid, "chats", chatId), { title });
+  await updateDoc(doc(db, "users", uid, "chats", chatId), { title, titleManual: true });
 }
 
 export async function togglePin(uid, chatId, pinned) {
@@ -183,6 +295,9 @@ export async function sendMessage(uid, chatId, { text, isMotherMode, history, re
   });
 
   await updateDoc(doc(db, "users", uid, "chats", chatId), { updatedAt: serverTimestamp() });
+
+  updateConversationMemory(uid, chatId, { chatData, text, reply, history: apiMessages })
+    .catch(() => {});
 
   // استخلاص ذاكرة طويلة المدى في الخلفية — من رسايل المستخدم بس، مش من رد الـ AI (مش هيأخر الرد على المستخدم)
   if (memory.enabled !== false) {
