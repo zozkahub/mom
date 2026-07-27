@@ -69,7 +69,9 @@ function publicBot(bot) {
   };
 }
 
-function buildBotPrompt(bot, visitor = {}, memory = []) {
+function buildBotPrompt(bot, visitor = {}, memory = [], conversation = {}) {
+  const firstTurn = conversation.firstTurn === true;
+  const disclosureDone = conversation.disclosureDone === true;
   return `
 أنت النسخة الرقمية الشخصية من ${bot.ownerName}.
 تكلم بصوته وشخصيته ومعلوماته، وليس كمساعد عام.
@@ -117,6 +119,13 @@ ${(memory || []).map((item) => `- ${item}`).join("\n") || "لا توجد بعد"
 - استخدم اللهجة المناسبة لصاحب النموذج لو البيانات توضح ذلك.
 - لا تخترع معلومات غير موجودة، لكن استنتج بحذر من البيانات.
 - استخدم Markdown بسيط عند الحاجة.
+
+أسلوب الشخصية مهم جدًا:
+- تحدث بضمير المتكلم كصاحب الشخصية: «أنا بحب» و«أنا بشتغل»، وليس «محمد يحب» أو «صاحب النموذج لديه».
+- كن إنسانًا ودودًا وعفويًا، واستخدم فقرات قصيرة ولهجة مناسبة، مع إيموجي خفيف عند الحاجة.
+- لو طُلب منك «احكي عن نفسك» أو «عرفني بنفسك»، اكتب تعريفًا طبيعيًا من فقرة أو فقرتين، وليس قائمة بيانات أو سيرة ذاتية أو عناوين مثل ويكيبيديا.
+- لا تكرر عبارة «أنا النسخة الرقمية» في كل رد. حالة الإفصاح الحالية: ${disclosureDone ? "تم الإفصاح عنها سابقًا، لا تكررها" : firstTurn ? "هذه أول إجابة، اذكرها مرة واحدة باختصار" : "لا تذكرها إلا إذا سأل الزائر صراحة عن كونك AI"}.
+- بعد الإفصاح الأول، استمر في الحديث بصيغة «أنا» وبشخصية ${bot.ownerName}، ولا تحول كل إجابة إلى شرح تقني عن النموذج.
   `.trim();
 }
 
@@ -131,14 +140,32 @@ function normalizeQuestion(text = "") {
     .trim();
 }
 
-function getDirectReply(bot, visitor, text = "") {
+function getDirectReply(bot, visitor, text = "", conversation = {}) {
   const question = normalizeQuestion(text);
   const owner = bot.ownerName || "صاحب النموذج";
   const visitorName = visitor.name || "لسه ماكتبتش اسمك";
   const relation = visitor.relation || "لسه ماحددتش صلتك";
+  const shouldDisclose = conversation.firstTurn === true && conversation.disclosureDone !== true;
+
+  const addOpeningDisclosure = (reply) => shouldDisclose
+    ? `${reply}\n\nملاحظة صغيرة: أنا نسخة رقمية مبنية على معلومات ${owner}، وهكلمك بطريقته.`
+    : reply;
+
+  if (/(احكي عن نفسك|احكيلي عن نفسك|عرفني بنفسك|كلمنا عن نفسك|قول لي عن نفسك|قولي عن نفسك)/.test(question)) {
+    const profile = String(bot.profileSummary || "").replace(/\s+/g, " ").trim().slice(0, 520);
+    const foods = String(bot.favoriteFoods || "").replace(/\s+/g, " ").trim().slice(0, 240);
+    const activities = String(bot.favoriteActivities || "").replace(/\s+/g, " ").trim().slice(0, 240);
+    const projects = String(bot.projects || "").replace(/\s+/g, " ").trim().slice(0, 300);
+    const parts = [`أكيد 😄\nأنا ${owner}${profile ? `، ${profile}` : "."}`];
+    if (activities) parts.push(`بحب ${activities}.`);
+    if (foods) parts.push(`وبالنسبة للأكل، بحب ${foods}.`);
+    if (projects) parts.push(`وبشتغل كمان على ${projects}.`);
+    parts.push("لو عندك سؤال عني أو عن حاجة بعملها، اسأل براحتك.");
+    return addOpeningDisclosure(parts.join("\n\n"));
+  }
 
   if (/(^| )(انا مين|فاكرني|انت عارفني)( |$)/.test(question)) {
-    return `إنت ${visitorName}، وقلت إنك ${relation} لـ${owner}. وأنا النسخة الرقمية من ${owner}، فهفتكرك بالمعلومات دي طول المحادثة.`;
+    return `إنت ${visitorName}، وقلت إنك ${relation} لـ${owner}. هفتكرك بالمعلومات دي طول المحادثة.`;
   }
 
   if (/(^| )(من انت|انت مين|بكلم مين|انا بكلم مين)( |$)/.test(question)) {
@@ -158,7 +185,7 @@ function getDirectReply(bot, visitor, text = "") {
   }
 
   if (/(عامل ايه|اخبارك|ازيك|احوالك)/.test(question)) {
-    return `أنا تمام يا ${visitorName}، ومبسوط إنك بتكلمني. قولّي حابب نتكلم عن إيه؟`;
+    return addOpeningDisclosure(`أنا تمام يا ${visitorName}، ومبسوط إنك بتكلمني. قولّي حابب نتكلم عن إيه؟`);
   }
 
   return "";

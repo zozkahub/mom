@@ -48,7 +48,12 @@ exports.handler = async (event) => {
     relation: String(payload.visitor?.relation || "").trim().slice(0, 160),
   };
   const latestUserMessage = messages.filter((message) => message.role === "user").at(-1)?.content || "";
-  const directReply = getDirectReply(bot, visitor, latestUserMessage);
+  const userTurns = messages.filter((message) => message.role === "user");
+  const conversation = {
+    firstTurn: userTurns.length <= 1,
+    disclosureDone: messages.some((message) => message.role === "assistant" && /نسخة رقمية|ذكاء اصطناعي|\bAI\b/i.test(message.content)),
+  };
+  const directReply = getDirectReply(bot, visitor, latestUserMessage, conversation);
   if (directReply) return json(200, { reply: directReply, direct: true });
 
   let apiKey;
@@ -58,7 +63,7 @@ exports.handler = async (event) => {
     return json(500, { error: "فشل فك تشفير مفتاح النموذج. راجع BOT_STORAGE_SECRET." });
   }
 
-  const systemPrompt = buildBotPrompt(bot, visitor, memory);
+  const systemPrompt = buildBotPrompt(bot, visitor, memory, conversation);
 
   try {
     const reply = await callBotModel({ bot, apiKey, messages, systemPrompt });
