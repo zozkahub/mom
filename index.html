@@ -65,18 +65,6 @@
       <label>المشاريع والأعمال
         <textarea id="bot-projects" rows="4" placeholder="اكتب المشاريع، القنوات، التطبيقات، الأعمال السابقة والحالية..."></textarea>
       </label>
-      <fieldset class="mode-picker">
-        <legend>وضع الذكاء</legend>
-        <label class="mode-option">
-          <input type="radio" name="bot-mode" value="quick" />
-          <span><strong>سريع</strong><small>رد أسرع وسياق مختصر</small></span>
-        </label>
-        <label class="mode-option mode-option--selected">
-          <input type="radio" name="bot-mode" value="pro" checked />
-          <span><strong>Pro</strong><small>ذاكرة أوسع وردود أذكى</small></span>
-        </label>
-      </fieldset>
-
       <div class="provider-grid">
         <label>مزود النموذج
           <select id="bot-provider">
@@ -116,6 +104,7 @@
       <input id="generated-link" readonly />
       <button class="btn btn--ghost" id="copy-generated-link">نسخ الرابط</button>
     </section>
+
   </main>
 </section>
 
@@ -163,6 +152,20 @@
         <button type="submit" class="send-btn" id="public-send-btn" aria-label="إرسال">↑</button>
       </form>
     </section>
+
+    <div id="public-tour" class="public-tour" hidden aria-hidden="true">
+      <div class="public-tour-backdrop"></div>
+      <div id="public-tour-spotlight" class="public-tour-spotlight" aria-hidden="true"></div>
+      <section id="public-tour-card" class="public-tour-card" role="dialog" aria-live="polite">
+        <span class="public-tour-step" id="public-tour-step">1 / 2</span>
+        <h2 id="public-tour-title">اختار طريقة الرد</h2>
+        <p id="public-tour-text">اضغط على your digital في أي وقت وبدّل بين Fast وPro حسب احتياجك.</p>
+        <div class="public-tour-actions">
+          <button type="button" class="btn btn--ghost" id="public-tour-skip">تخطي</button>
+          <button type="button" class="btn btn--primary" id="public-tour-next">التالي</button>
+        </div>
+      </section>
+    </div>
   </main>
 </section>
 

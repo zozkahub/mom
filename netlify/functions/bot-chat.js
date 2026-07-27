@@ -6,6 +6,7 @@ const {
   buildBotPrompt,
   getDirectReply,
   buildGracefulFallback,
+  personalizeReply,
   callBotModel,
 } = require("./bot-utils");
 
@@ -75,7 +76,7 @@ exports.handler = async (event) => {
 
   try {
     const reply = await callBotModel({ bot, apiKey, messages, systemPrompt, mode });
-    return json(200, { reply, mode, modelUsed: bot.model || bot.provider });
+    return json(200, { reply: personalizeReply(reply, visitor), mode, modelUsed: bot.model || bot.provider });
   } catch (err) {
     const detail = err?.message || "Unknown provider error";
     console.error("bot provider failed", detail);

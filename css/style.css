@@ -371,7 +371,7 @@ button, input, select, textarea {
 }
 .generated-link h2 { margin: 0 0 12px; font-size: 18px; }
 .generated-link input { direction: ltr; margin-bottom: 10px; }
-.public-bot-shell { min-height: calc(100dvh - 76px); display: flex; flex-direction: column; }
+.public-bot-shell { width: min(100%, 960px); min-height: calc(100dvh - 76px); display: flex; flex-direction: column; }
 .visitor-gate {
   width: min(100%, 520px);
   margin: auto;
@@ -445,10 +445,45 @@ button, input, select, textarea {
 .mode-check { width: 8px; height: 8px; border-radius: 50%; background: transparent; flex: 0 0 auto; }
 .public-model-option[aria-checked="true"] .mode-check { background: var(--gold); box-shadow: 0 0 0 3px rgba(231,193,109,.15); }
 #public-chat-person { margin: 0; color: var(--ink-dim); font-size: 12px; max-width: min(72vw, 640px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#public-messages { flex: 1; width: 100%; max-width: 820px; padding-inline: 0; }
-#public-composer { margin-bottom: 0; width: 100%; }
+#public-messages { flex: 1; width: 100%; max-width: 940px; padding-inline: 0; }
+#public-composer { margin: 0 auto; width: 100%; max-width: 940px; }
 #public-composer-input { flex: 1; resize: none; max-height: 140px; background: transparent; border: none; padding: 10px 12px; font-size: 15px; }
 #public-composer-input:focus { outline: none; }
+
+/* ================= الجولة التعريفية داخل الشات ================= */
+.public-tour[hidden] { display: none; }
+.public-tour { position: fixed; inset: 0; z-index: 70; pointer-events: none; }
+.public-tour-backdrop { position: absolute; inset: 0; background: transparent; pointer-events: auto; }
+.public-tour-spotlight {
+  position: fixed;
+  z-index: 1;
+  border: 2px solid var(--gold);
+  border-radius: 12px;
+  box-shadow: 0 0 0 9999px rgba(0,0,0,.66), 0 0 0 7px rgba(231,193,109,.15), 0 0 30px rgba(231,193,109,.3);
+  pointer-events: none;
+  animation: tourSpotlight 1.8s ease-in-out infinite;
+}
+@keyframes tourSpotlight {
+  0%, 100% { transform: scale(1); opacity: .85; }
+  50% { transform: scale(1.025); opacity: 1; }
+}
+.public-tour-card {
+  position: fixed;
+  z-index: 2;
+  padding: 18px;
+  border: 1px solid rgba(231,193,109,.45);
+  border-radius: 12px;
+  background: #202020;
+  box-shadow: 0 18px 50px rgba(0,0,0,.45);
+  pointer-events: auto;
+  animation: tourCardIn .28s cubic-bezier(.19,1,.22,1) both;
+}
+@keyframes tourCardIn { from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.public-tour-step { display: block; color: var(--gold); font-size: 11px; margin-bottom: 6px; }
+.public-tour-card h2 { margin: 0 0 8px; font-family: var(--font-display); font-size: 19px; }
+.public-tour-card p { margin: 0; color: var(--ink-dim); line-height: 1.7; font-size: 13px; }
+.public-tour-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; }
+.public-tour-actions .btn { padding: 9px 14px; font-size: 13px; }
 
 /* ================= التطبيق ================= */
 #view-app {
