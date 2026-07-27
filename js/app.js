@@ -21,6 +21,8 @@ let unsubMessages = null;
 let messagesCache = [];
 let isCreatingChat = false;
 let isSendingMessage = false;
+let transientError = "";
+let lastRenderSignature = "";
 
 const savedStyle = localStorage.getItem("ziad-response-style");
 if (savedStyle && $("#setting-style")) {
@@ -30,6 +32,7 @@ if (savedStyle && $("#setting-style")) {
 function showView(name) {
   Object.values(views).forEach((v) => v.classList.remove("view--active"));
   views[name].classList.add("view--active");
+  document.body.classList.add("app-ready");
 }
 
 // ---------- شاشة الترحيب ----------
@@ -121,6 +124,12 @@ function renderChatList(chats) {
   const term = $("#chat-search").value.trim().toLowerCase();
   const filtered = term ? chats.filter((c) => c.title.toLowerCase().includes(term)) : chats;
   const sorted = [...filtered].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  const activeChat = allChats.find((c) => c.id === currentChatId);
+
+  if (currentChatId && !activeChat) {
+    currentChatId = null;
+    messagesCache = [];
+  }
 
   $("#chat-list").innerHTML = sorted
     .map(
@@ -140,6 +149,7 @@ function renderChatList(chats) {
     });
   });
 
+  if (activeChat) $("#chat-title").textContent = activeChat.title || "محادثة";
   if (!currentChatId && sorted.length) openChat(sorted[0].id);
 }
 
@@ -168,6 +178,8 @@ $("#new-chat-btn").addEventListener("click", async () => {
 
 function openChat(chatId) {
   currentChatId = chatId;
+  transientError = "";
+  lastRenderSignature = "";
   const chat = allChats.find((c) => c.id === chatId);
   $("#chat-title").textContent = chat ? chat.title : "محادثة";
   if (unsubMessages) unsubMessages();
@@ -179,13 +191,23 @@ function openChat(chatId) {
 
 function renderMessages(msgs) {
   messagesCache = msgs;
+  const signature = JSON.stringify({
+    ids: msgs.map((m) => `${m.id}:${m.role}:${m.text}`),
+    isSendingMessage,
+    transientError,
+  });
+
+  if (signature === lastRenderSignature) return;
+  lastRenderSignature = signature;
+
   $("#empty-state").hidden = msgs.length > 0;
   $("#messages").innerHTML =
     `<div class="empty-state" id="empty-state" ${msgs.length ? "hidden" : ""}><p>ابدئي بأي كلمة، أنا موجود.</p></div>` +
     msgs
       .map((m) => `<div class="msg msg--${m.role}" dir="auto">${renderRichText(m.text)}</div>`)
       .join("") +
-    (isSendingMessage ? `<div class="msg msg--assistant msg--typing" aria-label="المساعد يكتب"><span></span><span></span><span></span></div>` : "");
+    (isSendingMessage ? `<div class="msg msg--assistant msg--typing" aria-label="المساعد يكتب"><span></span><span></span><span></span></div>` : "") +
+    (transientError ? `<div class="msg msg--assistant msg--error" dir="auto">${renderRichText(transientError)}</div>` : "");
   $("#messages").scrollTop = $("#messages").scrollHeight;
 }
 
@@ -254,6 +276,7 @@ $("#composer").addEventListener("submit", async (e) => {
   input.style.height = "auto";
   $("#send-btn").disabled = true;
   isSendingMessage = true;
+  transientError = "";
   $("#typing-indicator").hidden = true;
   renderMessages(messagesCache);
 
@@ -267,7 +290,7 @@ $("#composer").addEventListener("submit", async (e) => {
       responseStyle: $("#setting-style").value,
     });
   } catch (err) {
-    alert(err.message);
+    transientError = err.message;
   } finally {
     isSendingMessage = false;
     $("#send-btn").disabled = false;

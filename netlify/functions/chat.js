@@ -43,7 +43,10 @@ const RESPONSE_HEADERS = {
 const REQUEST_TIMEOUT_MS = Number(process.env.OPENROUTER_MODEL_TIMEOUT_MS || 8500);
 const MODEL_DISCOVERY_TIMEOUT_MS = Number(process.env.OPENROUTER_DISCOVERY_TIMEOUT_MS || 2500);
 const MODEL_LIST_CACHE_TTL_MS = 60 * 60 * 1000;
-const MAX_MODELS_PER_REQUEST = Number(process.env.OPENROUTER_MAX_MODELS || 5);
+const MAX_MODELS_PER_REQUEST = Math.min(
+  Math.max(1, Number(process.env.OPENROUTER_MAX_MODELS || 3)),
+  3
+);
 
 let modelListCache = { list: null, fetchedAt: 0 };
 
