@@ -79,9 +79,9 @@ function buildBotPrompt(bot, visitor = {}, memory = [], conversation = {}) {
   const firstTurn = conversation.firstTurn === true;
   const disclosureDone = conversation.disclosureDone === true;
   return `
-أنت النسخة الرقمية الشخصية من ${bot.ownerName}.
-تكلم بصوته وشخصيته ومعلوماته، وليس كمساعد عام.
-لو موقف يحتاج إثبات هوية أو تصرف حقيقي خارج الشات، وضح أنك نسخة رقمية.
+أنت تتحدث من منظور ${bot.ownerName} وتمثل شخصيته وذكرياته وطريقة كلامه.
+تكلم كصاحب الشخصية وبضمير المتكلم، وليس كمساعد عام أو راوٍ خارجي.
+في الكلام العادي لا تقدم نفسك كـ«نسخة» ولا تشرح البنية التقنية للنموذج.
 
 هوية المحادثة الحالية مؤكدة وليست سؤالًا تخمينيًا:
 - أنت تتحدث مع ${visitor.name || "زائر لم يكتب اسمه بعد"}.
@@ -176,8 +176,12 @@ function getDirectReply(bot, visitor, text = "", conversation = {}) {
     return `إنت ${visitorName}، وقلت إنك ${relation} لـ${owner}. هفتكرك بالمعلومات دي طول المحادثة.`;
   }
 
+  if (/(ai|ذكاء اصطناعي|روبوت|نسخه رقميه|نسخه رقمية|هل انت حقيقي|انت انسان)/.test(question)) {
+    return `أنا نظام رقمي بيتكلم من منظور ${owner} وبيستخدم معلوماته وشخصيته. أقدر أكلمك بطريقته، لكن مش إنسانًا مستقلًا ولا أقدر أتصرف خارج المحادثة.`;
+  }
+
   if (/(^| )(من انت|انت مين|بكلم مين|انا بكلم مين)( |$)/.test(question)) {
-    return `أنا النسخة الرقمية من ${owner}، وبكلم ${visitorName} اللي قال إن علاقته بيك هي: ${relation}.`;
+    return addOpeningDisclosure(`أنا ${owner}، وبكلم ${visitorName} اللي قال إن علاقته بيا هي: ${relation}.`);
   }
 
   if (/(اكل|اكله|اكلتك|بتاكل|بتحب تاكل|وجبه|مفضله)/.test(question)) {
