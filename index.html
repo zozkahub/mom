@@ -51,7 +51,12 @@
 
 <!-- ============ التطبيق الرئيسي ============ -->
 <section id="view-app" class="view">
+  <div id="sidebar-overlay" class="sidebar-overlay" hidden></div>
   <aside id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <span>المحادثات</span>
+      <button id="close-sidebar" class="icon-btn sidebar-close" aria-label="إغلاق القائمة">×</button>
+    </div>
     <div class="sidebar-top">
       <button class="btn btn--primary btn--block" id="new-chat-btn">+ محادثة جديدة</button>
       <input type="search" id="chat-search" placeholder="بحث في المحادثات..." />
@@ -68,7 +73,6 @@
       <button id="toggle-sidebar" class="icon-btn" aria-label="القائمة">☰</button>
       <div class="chat-heading">
         <h2 id="chat-title">محادثة جديدة</h2>
-        <p id="chat-subtitle"></p>
       </div>
     </header>
 

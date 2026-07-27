@@ -24,6 +24,7 @@ export async function createChat(uid, { title = "محادثة جديدة", isMot
     aiSummary: "",
     aiNextPrompt: "",
     titleManual: false,
+    titleGenerated: false,
     pinned: false,
     isMotherMode,
     createdAt: serverTimestamp(),
@@ -137,7 +138,7 @@ function cleanShortText(text = "", fallback = "") {
     .slice(0, 160);
 }
 
-async function generateConversationMetadata({ currentTitle, userText, assistantReply, history }) {
+async function generateConversationMetadata({ currentTitle, titleSourceText, userText, assistantReply, history }) {
   const metadataPrompt = `
 أنت منظم ذاكرة محادثات لتطبيق شات شخصي.
 ارجع JSON فقط بدون شرح:
@@ -168,7 +169,10 @@ async function generateConversationMetadata({ currentTitle, userText, assistantR
 سياق سابق مختصر:
 ${compactHistory}
 
-آخر رسالة من المستخدم:
+أول طلب في المحادثة، استخدمه فقط لصناعة العنوان:
+${titleSourceText || userText}
+
+آخر رسالة من المستخدم، استخدمها للملخص فقط:
 ${userText}
 
 رد زياد الرقمي:
@@ -185,8 +189,10 @@ ${assistantReply}
 }
 
 async function updateConversationMemory(uid, chatId, { chatData, text, reply, history }) {
+  const titleSourceText = chatData.firstUserText || text;
   const metadata = await generateConversationMetadata({
     currentTitle: chatData.title,
+    titleSourceText,
     userText: text,
     assistantReply: reply,
     history,
@@ -202,8 +208,15 @@ async function updateConversationMemory(uid, chatId, { chatData, text, reply, hi
     summarizedAt: Date.now(),
   };
 
-  if (!chatData.titleManual && title && title !== DEFAULT_CHAT_TITLE) {
+  const canSetAiTitle =
+    !chatData.titleManual &&
+    !chatData.titleGenerated &&
+    (!chatData.firstUserText || chatData.firstUserText === text || chatData.titlePendingAI);
+
+  if (canSetAiTitle && title && title !== DEFAULT_CHAT_TITLE) {
     patch.title = title;
+    patch.titleGenerated = true;
+    patch.titlePendingAI = false;
   }
 
   await updateDoc(doc(db, "users", uid, "chats", chatId), patch);
@@ -253,6 +266,8 @@ export async function sendMessage(uid, chatId, { text, isMotherMode, history, re
   if (!chatData.title || chatData.title === DEFAULT_CHAT_TITLE) {
     await updateDoc(chatRef, {
       title: makeChatTitle(text),
+      firstUserText: text,
+      titlePendingAI: true,
       updatedAt: serverTimestamp(),
     });
   }

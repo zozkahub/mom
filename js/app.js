@@ -36,6 +36,18 @@ function showView(name) {
   document.body.classList.add("app-ready");
 }
 
+function openSidebar() {
+  $("#sidebar").classList.add("open");
+  $("#sidebar-overlay").hidden = false;
+  document.body.classList.add("sidebar-open");
+}
+
+function closeSidebar() {
+  $("#sidebar").classList.remove("open");
+  $("#sidebar-overlay").hidden = true;
+  document.body.classList.remove("sidebar-open");
+}
+
 // ---------- شاشة الترحيب ----------
 $("#btn-mother-enter").addEventListener("click", () => {
   isMotherMode = true;
@@ -142,7 +154,10 @@ function renderChatList(chats) {
     .join("");
 
   document.querySelectorAll(".chat-item").forEach((el) => {
-    el.addEventListener("click", () => openChat(el.dataset.id));
+    el.addEventListener("click", () => {
+      openChat(el.dataset.id);
+      closeSidebar();
+    });
     el.addEventListener("dblclick", async () => {
       const chat = allChats.find((c) => c.id === el.dataset.id);
       const newTitle = prompt("اسم جديد للمحادثة:", chat.title);
@@ -160,7 +175,7 @@ $("#new-chat-btn").addEventListener("click", async () => {
   if (isCreatingChat) return;
 
   if (currentChatId && messagesCache.length === 0) {
-    $("#sidebar").classList.remove("open");
+    closeSidebar();
     input.focus();
     return;
   }
@@ -174,7 +189,7 @@ $("#new-chat-btn").addEventListener("click", async () => {
     isCreatingChat = false;
     $("#new-chat-btn").disabled = false;
   }
-  $("#sidebar").classList.remove("open");
+  closeSidebar();
 });
 
 function openChat(chatId) {
@@ -193,7 +208,6 @@ function openChat(chatId) {
 function setChatHeading(chat = {}) {
   activeChatMeta = chat || {};
   $("#chat-title").textContent = chat?.title || "محادثة";
-  $("#chat-subtitle").textContent = chat?.aiNextPrompt || chat?.aiSummary || "";
 }
 
 function renderMessages(msgs) {
@@ -211,7 +225,7 @@ function renderMessages(msgs) {
   $("#empty-state").hidden = msgs.length > 0;
   $("#messages").innerHTML =
     `<div class="empty-state" id="empty-state" ${msgs.length ? "hidden" : ""}>
-      <p>${escapeHtml(activeChatMeta.aiNextPrompt || "ابدأ بأي كلمة، أنا موجود.")}</p>
+      <p>اسألني عن أي حاجة، أو افتح موضوع من اللي كنا شغالين عليه.</p>
     </div>` +
     msgs
       .map((m) => `<div class="msg msg--${m.role}" dir="auto">${renderRichText(m.text)}</div>`)
@@ -309,7 +323,12 @@ $("#composer").addEventListener("submit", async (e) => {
 });
 
 // ---------- الشريط الجانبي (موبايل) ----------
-$("#toggle-sidebar").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
+$("#toggle-sidebar").addEventListener("click", openSidebar);
+$("#close-sidebar").addEventListener("click", closeSidebar);
+$("#sidebar-overlay").addEventListener("click", closeSidebar);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeSidebar();
+});
 
 // ---------- الإعدادات ----------
 $("#open-settings").addEventListener("click", () => ($("#settings-panel").hidden = false));
