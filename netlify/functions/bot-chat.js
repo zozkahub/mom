@@ -34,7 +34,7 @@ exports.handler = async (event) => {
   const messages = Array.isArray(payload.messages)
     ? payload.messages
       .filter((message) => message && (message.role === "user" || message.role === "assistant") && typeof message.content === "string")
-      .slice(-20)
+      .slice(-36)
       .map((message) => ({ role: message.role, content: message.content.slice(0, 6000) }))
     : [];
   if (!messages.length) return json(400, { error: "لازم تبعت رسالة." });
@@ -47,9 +47,13 @@ exports.handler = async (event) => {
   }
 
   const memory = Array.isArray(payload.memory)
-    ? payload.memory.filter((item) => typeof item === "string").slice(-10).map((item) => item.slice(0, 1000))
+    ? payload.memory.filter((item) => typeof item === "string").slice(-24).map((item) => item.slice(0, 1000))
     : [];
-  const systemPrompt = buildBotPrompt(bot, payload.visitor || {}, memory);
+  const visitor = {
+    name: String(payload.visitor?.name || "").trim().slice(0, 120),
+    relation: String(payload.visitor?.relation || "").trim().slice(0, 160),
+  };
+  const systemPrompt = buildBotPrompt(bot, visitor, memory);
 
   try {
     const reply = await callBotModel({ bot, apiKey, messages, systemPrompt });

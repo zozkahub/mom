@@ -443,6 +443,22 @@ function loadSavedPublicMessages() {
   }
 }
 
+function savePublicVisitor() {
+  if (!currentPublicBot || !publicVisitor) return;
+  localStorage.setItem(`public-visitor:${currentPublicBot.id}`, JSON.stringify(publicVisitor));
+}
+
+function loadSavedPublicVisitor() {
+  if (!currentPublicBot) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(`public-visitor:${currentPublicBot.id}`) || "null");
+    if (saved?.name) $("#visitor-name").value = saved.name;
+    if (saved?.relation) $("#visitor-relation").value = saved.relation;
+  } catch {
+    // Ignore malformed local browser data and let the visitor enter it again.
+  }
+}
+
 function renderPublicMessages() {
   const container = $("#public-messages");
   if (!publicMessages.length && !isPublicSending) {
@@ -463,6 +479,7 @@ async function loadPublicBot(id) {
     $("#public-bot-title").textContent = currentPublicBot.publicTitle || `نموذج ${currentPublicBot.ownerName}`;
     $("#public-bot-intro").textContent = `أنت على وشك التحدث مع النسخة الرقمية من ${currentPublicBot.ownerName}. اكتب اسمك وصلتك به عشان الرد يكون مناسبًا.`;
     $("#public-chat-title").textContent = currentPublicBot.publicTitle || currentPublicBot.ownerName;
+    loadSavedPublicVisitor();
     showView("publicBot");
   } catch (err) {
     $("#public-bot-title").textContent = "النموذج غير متاح";
@@ -478,9 +495,11 @@ $("#visitor-form").addEventListener("submit", (e) => {
     relation: $("#visitor-relation").value.trim(),
   };
   if (!publicVisitor.name || !publicVisitor.relation) return;
+  savePublicVisitor();
   loadSavedPublicMessages();
   $("#visitor-gate").hidden = true;
   $("#public-chat").hidden = false;
+  $("#public-chat-person").textContent = `أنت: ${publicVisitor.name} · ${publicVisitor.relation}`;
   renderPublicMessages();
   $("#public-composer-input").focus();
 });
@@ -503,11 +522,15 @@ $("#public-composer").addEventListener("submit", async (e) => {
   $("#public-send-btn").disabled = true;
   renderPublicMessages();
 
-  const messages = publicMessages.slice(-20);
-  const memory = publicMessages
-    .filter((m) => m.role === "user")
-    .slice(-10)
-    .map((m) => `من كلام الزائر في المحادثات السابقة: ${m.content}`);
+  const messages = publicMessages.slice(-36);
+  const memory = [];
+  let memoryBudget = 12000;
+  for (const message of publicMessages.slice(0, -36).concat(publicMessages.slice(-36, -1))) {
+    const excerpt = `${message.role === "user" ? "الزائر" : "النموذج"}: ${message.content}`.slice(0, 900);
+    if (memoryBudget - excerpt.length < 0) break;
+    memory.push(`من أرشيف المحادثة: ${excerpt}`);
+    memoryBudget -= excerpt.length;
+  }
 
   try {
     const res = await fetch("/api/bot-chat", {

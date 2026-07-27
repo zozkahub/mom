@@ -330,6 +330,7 @@ button, input, select, textarea {
 }
 .visitor-gate h1 { font-family: var(--font-display); font-size: clamp(28px, 7vw, 42px); margin: 0 0 12px; }
 .visitor-gate > p:not(.eyebrow) { color: var(--ink-dim); line-height: 1.8; margin: 0 0 24px; }
+.visitor-gate .visitor-note { color: var(--teal); font-size: 13px; margin-top: -14px; }
 .visitor-gate form { display: flex; flex-direction: column; gap: 14px; text-align: start; }
 .public-chat { flex: 1; min-height: calc(100dvh - 76px); display: flex; flex-direction: column; width: 100%; }
 .public-chat .chat-header { width: 100%; padding-inline: 0; }
