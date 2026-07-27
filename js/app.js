@@ -533,16 +533,25 @@ $("#public-composer").addEventListener("submit", async (e) => {
   }
 
   try {
-    const res = await fetch("/api/bot-chat", {
+    const request = (requestMessages, requestMemory) => fetch("/api/bot-chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ botId: currentPublicBot.id, visitor: publicVisitor, messages, memory }),
+      body: JSON.stringify({ botId: currentPublicBot.id, visitor: publicVisitor, messages: requestMessages, memory: requestMemory }),
     });
-    const data = await readApiResponse(res);
+
+    let data;
+    try {
+      data = await readApiResponse(await request(messages, memory));
+    } catch (firstError) {
+      // Retry with a compact context when a provider rejects a long prompt or briefly times out.
+      data = await readApiResponse(await request(publicMessages.slice(-8), []));
+    }
     publicMessages.push({ role: "assistant", content: data.reply || "مفيش رد صالح من النموذج." });
     savePublicMessages();
   } catch (err) {
-    publicMessages.push({ role: "assistant", content: `حصلت مشكلة: ${err.message}` });
+    const owner = currentPublicBot?.ownerName || "صاحب النموذج";
+    publicMessages.push({ role: "assistant", content: `أنا ${owner}. حصل عطل مؤقت في الاتصال، لكن المحادثة محفوظة. جرّب تبعت الرسالة تاني بعد لحظة.` });
+    console.warn("public bot request failed after retry", err);
   } finally {
     isPublicSending = false;
     $("#public-send-btn").disabled = false;

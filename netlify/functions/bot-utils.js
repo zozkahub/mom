@@ -8,6 +8,11 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 const RESPONSE_HEADERS = { ...JSON_HEADERS, ...CORS_HEADERS };
+const DEFAULT_OPENROUTER_FALLBACKS = [
+  "inclusionai/ling-3.0-flash:free",
+  "poolside/laguna-xs-2.1:free",
+  "openai/gpt-oss-20b:free",
+];
 
 function json(statusCode, body) {
   return {
@@ -191,6 +196,13 @@ function getDirectReply(bot, visitor, text = "", conversation = {}) {
   return "";
 }
 
+function buildGracefulFallback(bot, visitor = {}) {
+  const owner = bot.ownerName || "صاحب النموذج";
+  const name = visitor.name || "يا صديقي";
+  const profile = String(bot.profileSummary || "").replace(/\s+/g, " ").trim().slice(0, 360);
+  return `أنا ${owner} يا ${name}. حصل تأخير بسيط من مزود الذكاء الاصطناعي، بس أنا موجود. ${profile || "اسألني عن حياتي أو أكلي أو مشاريعي."}\n\nابعت رسالتك تاني أو اسألني عن حاجة محددة.`;
+}
+
 function withTimeout(ms) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
@@ -220,6 +232,14 @@ function getAssistantText(data) {
   return typeof content === "string" ? content.trim() : "";
 }
 
+function getOpenRouterModels(selectedModel) {
+  const configured = String(process.env.PERSONAL_OPENROUTER_FALLBACKS || process.env.OPENROUTER_MODEL_CHAIN || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return [...new Set([selectedModel, ...configured, ...DEFAULT_OPENROUTER_FALLBACKS].filter(Boolean))].slice(0, 3);
+}
+
 async function callOpenRouter({ apiKey, model, messages, systemPrompt }) {
   const { signal, cancel } = withTimeout(Number(process.env.PERSONAL_MODEL_TIMEOUT_MS || 8500));
   try {
@@ -233,7 +253,9 @@ async function callOpenRouter({ apiKey, model, messages, systemPrompt }) {
         "X-OpenRouter-Title": "Personal AI Builder",
       },
       body: JSON.stringify({
-        model: model || "openai/gpt-oss-20b:free",
+        ...(getOpenRouterModels(model).length > 1
+          ? { models: getOpenRouterModels(model) }
+          : { model: getOpenRouterModels(model)[0] || "openai/gpt-oss-20b:free" }),
         messages: [{ role: "system", content: systemPrompt }, ...messages],
         temperature: 0.65,
         max_tokens: 900,
@@ -330,5 +352,6 @@ module.exports = {
   publicBot,
   buildBotPrompt,
   getDirectReply,
+  buildGracefulFallback,
   callBotModel,
 };

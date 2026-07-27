@@ -5,6 +5,7 @@ const {
   getBotsStore,
   buildBotPrompt,
   getDirectReply,
+  buildGracefulFallback,
   callBotModel,
 } = require("./bot-utils");
 
@@ -60,7 +61,11 @@ exports.handler = async (event) => {
   try {
     apiKey = decrypt(bot.encryptedApiKey);
   } catch {
-    return json(500, { error: "فشل فك تشفير مفتاح النموذج. راجع BOT_STORAGE_SECRET." });
+    return json(200, {
+      reply: buildGracefulFallback(bot, visitor),
+      degraded: true,
+      warning: "فشل فك تشفير مفتاح النموذج. راجع BOT_STORAGE_SECRET.",
+    });
   }
 
   const systemPrompt = buildBotPrompt(bot, visitor, memory, conversation);
@@ -69,9 +74,12 @@ exports.handler = async (event) => {
     const reply = await callBotModel({ bot, apiKey, messages, systemPrompt });
     return json(200, { reply, modelUsed: bot.model || bot.provider });
   } catch (err) {
-    return json(502, {
-      error: "النموذج فشل في الرد.",
-      detail: err?.message || "Unknown provider error",
+    const detail = err?.message || "Unknown provider error";
+    console.error("bot provider failed", detail);
+    return json(200, {
+      reply: buildGracefulFallback(bot, visitor),
+      degraded: true,
+      warning: detail,
     });
   }
 };
